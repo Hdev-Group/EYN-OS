@@ -4,6 +4,7 @@
 #include "../../../include/screen.h"
 #include "../../../include/util.h"
 #include "../../../include/kb.h"
+#include "../../../include/math.h"
 #include <stdint.h>
 
 uint32_t __stack_chk_fail_local(){
@@ -74,6 +75,12 @@ void help()
 	printf("\n spam      : Spam NEVERGOON to the shell\n\n");
 }
 
+void maths()
+{
+	printf("\n");
+	printf(int_to_string(math_add(2,2)));
+	printf("\n");
+}
 
 void launch_shell(int n)
 {
@@ -113,6 +120,8 @@ void launch_shell(int n)
 		    {
 				ver();
 		    }
+			else if(cmdEql(ch,"maths"))
+				maths();
 		    else
 		    {
 				printf("\n'");
