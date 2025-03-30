@@ -61,7 +61,7 @@ void ver() {
     printf_colored("\n #########       ###       ###  ### ###   ######   ###    ###    ######", 13, 0);
     printf_colored("\n ###             ###       ###    #####            ###    ###        ###", 13, 0);
     printf_colored("\n #########       ###       ###      ###              ######     ######", 13, 0);
-	printf_colored("\n (ver. 0.02)\n\n", 7, 0);
+	printf_colored("\n (ver. 0.03)\n\n", 7, 0);
 }
 
 void help()
