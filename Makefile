@@ -55,5 +55,5 @@ build:all
 	
 clear:
 	rm -f obj/*.o
-	rm -r -f tmp/kernel.bin
+	rm -r -f tmp/boot/kernel.bin
 	
