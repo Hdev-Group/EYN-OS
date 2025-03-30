@@ -73,7 +73,7 @@ void help()
 	printf("\n color     : Changes the colors of the terminal");
 	printf("\n ver       : Shows the current system version");
 	printf("\n spam      : Spam 'EYN-OS' to the shell");
-	printf("\n calc      : Simple 8-Bit calculator\n\n")
+	printf("\n calc      : Simple 8-Bit calculator\n\n");
 }
 
 void maths()
