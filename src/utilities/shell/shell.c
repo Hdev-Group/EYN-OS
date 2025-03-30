@@ -50,7 +50,7 @@ void set_background_color()
 
 void joke_spam() {
 	for (int i = 1; i <= 100; i++) {
-		printf_colored(" NEVER GOON\n", 12, 0);
+		printf_colored(" EYN-OS\n", 12, 0);
 	}
 	printf("\n");
 }
@@ -72,14 +72,51 @@ void help()
 	printf("\n exit      : Quits the current shell");
 	printf("\n color     : Changes the colors of the terminal");
 	printf("\n ver       : Shows the current system version");
-	printf("\n spam      : Spam NEVERGOON to the shell\n\n");
+	printf("\n spam      : Spam 'EYN-OS' to the shell");
+	printf("\n calc      : Simple 8-Bit calculator\n\n")
 }
 
 void maths()
 {
-	printf("\n");
-	printf(int_to_string(math_add(2,2)));
-	printf("\n");
+	printf("\n Math symbols:  1 - Add  2 - Minus  3 - Divide  4 - Times\n");
+
+	printf_colored("\n Math symbol", 7, 0);
+	printf_colored("! ", 11, 0);
+	string symbol = readStr();
+	int intsymbol=str_to_int(symbol);
+
+	printf_colored("\n First number", 7, 0);
+	printf_colored("! ", 11, 0);
+	string strfint = readStr();
+	int fint=str_to_int(strfint);
+
+	printf_colored("\n Second number", 7, 0);
+	printf_colored("! ", 11, 0);
+	string strsint = readStr();
+	int sint=str_to_int(strsint);
+	printf("\n ");
+
+	if(intsymbol == 1)
+	{
+		printf(int_to_string(math_add(fint,sint)));
+	} 
+	else if(intsymbol == 2)
+	{
+		printf(int_to_string(math_remove(fint,sint)));
+	} 
+	else if(intsymbol == 4)
+	{
+		printf(int_to_string(math_epi(fint,sint)));
+	} 
+	else if(intsymbol == 3)
+	{
+		printf(int_to_string(math_dia(fint,sint)));
+	}
+	else
+	{
+		printf(" You used an invalid symbol.");
+	}
+	printf("\n\n");
 }
 
 void launch_shell(int n)
@@ -120,8 +157,10 @@ void launch_shell(int n)
 		    {
 				ver();
 		    }
-			else if(cmdEql(ch,"maths"))
+			else if(cmdEql(ch,"calc"))
+			{
 				maths();
+			}
 		    else
 		    {
 				printf("\n'");
