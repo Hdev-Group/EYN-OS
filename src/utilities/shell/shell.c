@@ -23,16 +23,16 @@ void echo()
 void set_background_color()
 {
 	printf("\n Color codes : ");
-	printf("\n 0 : black");
-	printf_colored("\n 1 : blue",1,0);   // screen.h
-	printf_colored("\n 2 : green",2,0);
-	printf_colored("\n 3 : cyan",3,0);
-	printf_colored("\n 4 : red",4,0);
-	printf_colored("\n 5 : purple",5,0);
-	printf_colored("\n 6 : orange",6,0);
-	printf_colored("\n 7 : grey",7,0);
-	printf_colored("\n 8 : dark grey",8,0);
-	printf_colored("\n 9 : blue light",9,0);
+	printf("\n 0  : black");
+	printf_colored("\n 1  : blue",1,0);   // screen.h
+	printf_colored("\n 2  : green",2,0);
+	printf_colored("\n 3  : cyan",3,0);
+	printf_colored("\n 4  : red",4,0);
+	printf_colored("\n 5  : purple",5,0);
+	printf_colored("\n 6  : orange",6,0);
+	printf_colored("\n 7  : grey",7,0);
+	printf_colored("\n 8  : dark grey",8,0);
+	printf_colored("\n 9  : blue light",9,0);
 	printf_colored("\n 10 : green light",10,0);
 	printf_colored("\n 11 : blue lighter",11,0);
 	printf_colored("\n 12 : red light",12,0);
@@ -40,16 +40,19 @@ void set_background_color()
 	printf_colored("\n 14 : yellow",14,0);
 	printf_colored("\n 15 : white",15,0);
 
-	printf("\n\n  Text color ? : ");
+	printf_colored("\n\n Text color",7,0);
+	printf_colored("! ", 11, 0);
 	int text_color = str_to_int(readStr());
-	printf("\n\n  Background color ? : ");
+	printf_colored("\n\n Background color",7,0);
+	printf_colored("! ", 11, 0);
 	int bg_color = str_to_int(readStr());
 	set_screen_color(text_color,bg_color);
 	clearScreen();
 }
 
 void joke_spam() {
-	for (int i = 1; i <= 100; i++) {
+	for (int i = 1; i <= 100; i++) 
+	{
 		printf_colored(" EYN-OS\n", 12, 0);
 	}
 	printf("\n");
@@ -78,7 +81,7 @@ void help()
 
 void maths()
 {
-	printf("\n Math symbols:  1 - Add  2 - Minus  3 - Divide  4 - Times\n");
+	printf("\n Math symbols:\n 1 : Add\n 2 : Minus\n 3 : Divide\n 4 : Multiply\n");
 
 	printf_colored("\n Math symbol", 7, 0);
 	printf_colored("! ", 11, 0);
