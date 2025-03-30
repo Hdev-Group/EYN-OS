@@ -78,6 +78,7 @@ void help()
 void launch_shell(int n)
 {
 	string ch = (string) malloc(200); // util.h
+	string data[64];
 	int counter = 0;
 	do
 	{

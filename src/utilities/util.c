@@ -1,6 +1,6 @@
-#include "../include/types.h"
-#include "../include/util.h"
-#include "../include/string.h"
+#include "../../include/types.h"
+#include "../../include/util.h"
+#include "../../include/string.h"
 #include <stdint.h>
 
 uint32_t __stack_chk_fail(){
