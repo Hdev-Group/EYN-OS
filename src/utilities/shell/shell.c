@@ -83,17 +83,17 @@ void maths()
 {
 	printf("\n Math symbols:\n 1 : Add\n 2 : Minus\n 3 : Divide\n 4 : Multiply\n");
 
-	printf_colored("\n Math symbol", 7, 0);
+	printf("\n Math symbol");
 	printf_colored("! ", 11, 0);
 	string symbol = readStr();
 	int intsymbol=str_to_int(symbol);
 
-	printf_colored("\n First number", 7, 0);
+	printf("\n First number");
 	printf_colored("! ", 11, 0);
 	string strfint = readStr();
 	int fint=str_to_int(strfint);
 
-	printf_colored("\n Second number", 7, 0);
+	printf("\n Second number");
 	printf_colored("! ", 11, 0);
 	string strsint = readStr();
 	int sint=str_to_int(strsint);
