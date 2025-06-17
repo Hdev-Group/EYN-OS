@@ -7,7 +7,7 @@ LDFLAGS = -m elf_i386 -T src/boot/link.ld
 EMULATOR = qemu-system-i386
 EMULATOR_FLAGS = -kernel
 
-OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o obj/tty.o
+OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o
 OUTPUT = tmp/boot/kernel.bin
 
 all:$(OBJS)
@@ -46,9 +46,6 @@ obj/shell.o:src/utilities/shell/shell.c
 
 obj/math.o:src/utilities/basic/math.c
 	$(COMPILER) $(CFLAGS) src/utilities/basic/math.c -o obj/math.o
-
-obj/tty.o:src/drivers/tty.c
-	$(COMPILER) $(CFLAGS) src/drivers/tty.c -o obj/tty.o
 
 obj/vga.o:src/drivers/vga.c
 	$(COMPILER) $(CFLAGS) src/drivers/vga.c -o obj/vga.o

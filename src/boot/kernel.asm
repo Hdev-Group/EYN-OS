@@ -1,10 +1,17 @@
+MBOOT_HEADER_MAGIC equ 0x1BADB002
+MBOOT_PAGE_ALIGN equ 1 << 0
+MBOOT_MEM_INFO equ 1 << 1
+MBOOT_GRAPH_MODE equ 1 << 2
+MBOOT_HEADER_FLAGS equ MBOOT_PAGE_ALIGN | MBOOT_MEM_INFO | MBOOT_GRAPH_MODE
+MBOOT_CHECKSUM equ -(MBOOT_HEADER_MAGIC + MBOOT_HEADER_FLAGS)
+
 bits 32 ; funny downgrade
 
 section .text
-        align 4
-        dd 0x1BADB002
-        dd 0x00
-        dd - (0x1BADB002+0x00)
+        align 32
+        dd MBOOT_HEADER_MAGIC
+        dd MBOOT_HEADER_FLAGS
+        dd MBOOT_CHECKSUM
 
         dd 0
         dd 0
@@ -13,8 +20,8 @@ section .text
         dd 0 ; skip over load of flags
 
         dd 0 ; graphical mode
-        dd 320 ; width of screen
-        dd 200 ; height of screen
+        dd 1280 ; width of screen
+        dd 720 ; height of screen
         dd 32 ; bit depth
 
 global start
@@ -28,7 +35,7 @@ start:
         push eax
 
         call kmain ; continue kernel.c kmain func
-        call Shutdown
+        ;call Shutdown
         hlt
 
 section .bss
