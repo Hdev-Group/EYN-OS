@@ -1,13 +1,15 @@
 #include "../../../include/string.h"
 #include "../../../include/system.h"
 #include "../../../include/shell.h"
-#include "../../../include/screen.h"
+#include "../../../include/tty.h"
 #include "../../../include/util.h"
 #include "../../../include/kb.h"
 #include "../../../include/math.h"
+#include "../../../include/multiboot.h"
 #include <stdint.h>
 
-uint32_t __stack_chk_fail_local(){
+uint32_t __stack_chk_fail_local()
+{
     return 0;
 }
 
@@ -24,7 +26,7 @@ void set_background_color()
 {
 	printf("\n Color codes : ");
 	printf("\n 0  : black");
-	printf_colored("\n 1  : blue",1,0);   // screen.h
+	printf_colored("\n 1  : blue",1,0); // tty.h
 	printf_colored("\n 2  : green",2,0);
 	printf_colored("\n 3  : cyan",3,0);
 	printf_colored("\n 4  : red",4,0);
@@ -43,9 +45,11 @@ void set_background_color()
 	printf_colored("\n\n Text color",7,0);
 	printf_colored("! ", 11, 0);
 	int text_color = str_to_int(readStr());
+
 	printf_colored("\n\n Background color",7,0);
 	printf_colored("! ", 11, 0);
 	int bg_color = str_to_int(readStr());
+
 	set_screen_color(text_color,bg_color);
 	clearScreen();
 }
@@ -58,13 +62,13 @@ void joke_spam() {
 	printf("\n");
 }
 
-void ver() {
+void ver(multiboot_info_t *mbi) {
 	printf_colored("\n #########   ###     ###   ###      ###              ######      ######", 13, 0);
     printf_colored("\n ###           ### ###     ######   ###            ###    ###  ###", 13, 0);
     printf_colored("\n #########       ###       ###  ### ###   ######   ###    ###    ######", 13, 0);
     printf_colored("\n ###             ###       ###    #####            ###    ###        ###", 13, 0);
     printf_colored("\n #########       ###       ###      ###              ######     ######", 13, 0);
-	printf_colored("\n (ver. 0.03)\n\n", 7, 0);
+	printf_colored("\n (ver. 0.04)\n\n", 7, 0);
 }
 
 void help()
@@ -122,7 +126,7 @@ void maths()
 	printf("\n\n");
 }
 
-void launch_shell(int n)
+void launch_shell(int n, multiboot_info_t *mbi)
 {
 	string ch = (string) malloc(200); // util.h
 	string data[64];
@@ -134,7 +138,7 @@ void launch_shell(int n)
 		    if(cmdEql(ch,"cmd"))
 		    {
 		            printf("\nNew recursive shell opened.\n");
-					launch_shell(n+1);
+					launch_shell(n+1, mbi);
 		    }
 		    else if(cmdEql(ch,"clear"))
 		    {
@@ -158,7 +162,7 @@ void launch_shell(int n)
 		    }
 			else if(cmdEql(ch,"ver"))
 		    {
-				ver();
+				ver(mbi);
 		    }
 			else if(cmdEql(ch,"calc"))
 			{
@@ -166,9 +170,14 @@ void launch_shell(int n)
 			}
 		    else
 		    {
-				printf("\n'");
-				printf(ch);
-		        printf("' isn't a valid command\n");
-		    }
+				if(check_string(ch) && !cmdEql(ch,"exit")) 
+				{
+					printf_gay("\n%s isn't a valid command\n", ch);
+				} 
+				else 
+				{
+					printf("\n");
+				}
+			}
 	} while (!cmdEql(ch,"exit"));
 }

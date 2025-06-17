@@ -1,5 +1,5 @@
 #include "../../../include/string.h"
-#include "../../../include/screen.h"
+#include "../../../include/tty.h"
 #include "../../../include/util.h"
 
 uint8 math_add(uint8 num1, uint8 num2) {

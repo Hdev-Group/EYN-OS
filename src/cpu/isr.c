@@ -1,5 +1,5 @@
 #include "../../include/isr.h"
-#include "../../include/screen.h"
+#include "../../include/tty.h"
 #include "../../include/idt.h"
 extern void isr_install() {
     set_idt_gate(0, (uint32)isr0);

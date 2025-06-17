@@ -6,14 +6,34 @@ section .text
         dd 0x00
         dd - (0x1BADB002+0x00)
 
+        dd 0
+        dd 0
+        dd 0
+        dd 0
+        dd 0 ; skip over load of flags
+
+        dd 0 ; graphical mode
+        dd 320 ; width of screen
+        dd 200 ; height of screen
+        dd 32 ; bit depth
+
 global start
-extern kmain            ; kernel.c
+extern kmain ; kernel.c
 
 start:
-        cli             ;clears interrupts 
-        call kmain      ;continue kernel.c kmain func
+        cli ; clears interrupts 
+
+        mov esp, stack_space
+        push ebx
+        push eax
+
+        call kmain ; continue kernel.c kmain func
         call Shutdown
-        hlt             ; halt cpu
+        hlt
+
+section .bss
+resb 8192
+stack_space:
 
 Shutdown: ; speaks for itself
     mov ax, 0x1000
