@@ -6,6 +6,7 @@
 #include "../../../include/kb.h"
 #include "../../../include/math.h"
 #include "../../../include/multiboot.h"
+#include "../../../include/vga.h"
 #include <stdint.h>
 
 uint32_t __stack_chk_fail_local()
@@ -130,7 +131,7 @@ void launch_shell(int n, multiboot_info_t *mbi)
 {
 	string ch = (string) malloc(200); // util.h
 	string data[64];
-	int counter = 0;
+	int gpu_mode = 0;
 	do
 	{
 			printf_colored("! ", 14, 0);
@@ -168,12 +169,16 @@ void launch_shell(int n, multiboot_info_t *mbi)
 			{
 				maths();
 			}
+			else if(cmdEql(ch,"draw"))
+			{
+				gpu_mode = 1;
+			}
 		    else
 		    {
 				if(check_string(ch) && !cmdEql(ch,"exit")) 
 				{
 					printf_gay("\n%s isn't a valid command\n", ch);
-				} 
+				}
 				else 
 				{
 					printf("\n");
