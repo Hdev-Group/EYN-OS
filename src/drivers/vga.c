@@ -4,6 +4,7 @@
 #include <stdarg.h>
 
 int width, height;
+int r = 255, g = 255, b = 255; // Default to white
 
 void drawRect(multiboot_info_t *mbi, int x, int y, int w, int h, int r, int g, int b)
 {
@@ -124,7 +125,7 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 	va_start(ap, format);
 
 	uint8 *ptr;
-	int r = 255, g = 255, b = 255; // Default to white
+	static int r = 255, g = 255, b = 255; // Default to white, static to maintain state
 
 	// Check if color parameters are provided
 	if (format[0] == '%' && format[1] == 'c') {
@@ -139,17 +140,27 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 		if (*ptr == '%') {
 			ptr++;
 			switch (*ptr) {
-				case 's':
-					printf(mbi, va_arg(ap, uint8 *), r, g, b);
+				case 's': {
+					char* str = va_arg(ap, char*);
+					while (*str) {
+						drawText(mbi, *str, r, g, b);
+						str++;
+					}
 					break;
-				case 'd':
-					printf(mbi, int_to_string(va_arg(ap, int)), r, g, b);
+				}
+				case 'd': {
+					char* num_str = int_to_string(va_arg(ap, int));
+					while (*num_str) {
+						drawText(mbi, *num_str, r, g, b);
+						num_str++;
+					}
 					break;
+				}
 				case '%':
 					drawText(mbi, '%', r, g, b);
 					break;
-				case 'c':  // Handle color format specifier
-					drawText(mbi, *ptr, r, g, b);
+				case 'c':
+					drawText(mbi, va_arg(ap, int), r, g, b);
 					break;
 			}
 		} else {
@@ -235,4 +246,6 @@ void clearScreen(multiboot_info_t *mbi)
 	drawRect(mbi, 0, 0, mbi->framebuffer_width, mbi->framebuffer_height, 0, 0, 0);
 	width = 0;
 	height = 0;
+	// Preserve color state by drawing a single character in the current color
+	drawText(mbi, ' ', 255, 255, 0);  // Draw a space in yellow to set the color state
 }

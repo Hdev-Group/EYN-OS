@@ -27,6 +27,8 @@ section .text
 global start
 extern kmain ; kernel.c
 
+global Shutdown  ; Export Shutdown function
+
 start:
         cli ; clears interrupts 
 
