@@ -7,16 +7,14 @@ uint32_t __stack_chk_fail(){
     return 0;
 }
 
-void memory_copy(char *source, char *dest, int nbytes) 
-{
+void memory_copy(char *source, char *dest, int nbytes) {
     int i;
     for (i = 0; i < nbytes; i++) {
         *(dest + i) = *(source + i);             //    dest[i] = source[i]
     }
 }
 
-void memory_set(uint8 *dest, uint8 val, uint32 len) 
-{
+void memory_set(uint8 *dest, uint8 val, uint32 len) {
     uint8 *temp = (uint8 *)dest;
     for ( ; len != 0; len--) *temp++ = val;
 }
@@ -24,8 +22,7 @@ void memory_set(uint8 *dest, uint8 val, uint32 len)
 /**
  * K&R implementation
  */
-string int_to_ascii(int n, char str[]) 
-{          
+string int_to_ascii(int n, char str[]) {          
     int i, sign;
     if ((sign = n) < 0) n = -n;
     i = 0;
@@ -36,9 +33,9 @@ string int_to_ascii(int n, char str[])
     if (sign < 0) str[i++] = '-';
     str[i] = '\0';
 
+    /* TODO: implement "reverse" */
     return str;
 }
-
 string int_to_string(int n)
 {
 	string ch = malloc(50);
@@ -46,7 +43,6 @@ string int_to_string(int n)
 	int len = strlength(ch);
 	int i = 0;
 	int j = len - 1;
-
 	while(i<(len/2 + len%2))
 	{
 		char tmp = ch[i];
@@ -70,6 +66,13 @@ int str_to_int(string ch)
 		p *= 10;
 	}
 	return n;
+}
+
+string char_to_string(char ch) {
+	string str;
+	str[0] = ch;
+
+	return str;
 }
 
 uint8 check_string(string str) {
@@ -174,6 +177,28 @@ uint8 check_string(string str) {
 		}
 	}
 
+	return res;
+}
+
+uint8 check_string_numbers(string str) {
+	uint8 size = strlength(str);
+	uint8 res = 0;
+	for (uint8 i = 0; i <= size; i++) {
+		if (
+			str[i] == '1' ||
+			str[i] == '2' ||
+			str[i] == '3' ||
+			str[i] == '4' ||
+			str[i] == '5' ||
+			str[i] == '6' ||
+			str[i] == '7' ||
+			str[i] == '8' ||
+			str[i] == '9' ||
+			str[i] == '0'
+		) {
+			res = 1;
+		}
+	}
 	return res;
 }
 

@@ -18,7 +18,7 @@ uint8 cmdLength(string ch) {
         string space;
         space[0] = ' ';
 
-        for (i; i <= realSize; i++) {
+        for (i; i < realSize; i++) {  // Changed <= to < to avoid reading past null terminator
                 if (hasSpace == 0) {
                         if (ch[i] != space[0]) {
                                 size++;
@@ -28,12 +28,7 @@ uint8 cmdLength(string ch) {
                 }
         }
         
-        if (hasSpace != 1) {
-                size--;
-        }
-
-        size--;
-        return size;
+        return size;  // Removed the unnecessary size adjustments
 }
 
 uint8 isStringEmpty(string ch1) {
@@ -92,14 +87,14 @@ uint8 strEql(string ch1,string ch2)
 {
         uint8 result = 1;
         uint8 size = strlength(ch1);
-        if(size != strlength(ch2)) result =0;
+        if(size != strlength(ch2)) result = 0;
         else
         {
-        uint8 i = 0;
-        for(i;i<=size;i++)
-        {
-                if(ch1[i] != ch2[i]) result = 0;
-        }
+                uint8 i = 0;
+                for(i; i < size; i++)  // Changed <= to < to avoid reading past null terminator
+                {
+                        if(ch1[i] != ch2[i]) result = 0;
+                }
         }
         return result;
 }
@@ -111,7 +106,7 @@ uint8 cmdEql(string ch1, string ch2) {
         if (size != cmdLength(ch2)) res = 0;
         else {
                 uint8 i = 0;
-                for (i; i <= size; i++) {
+                for (i; i < size; i++) {  // Changed <= to < to avoid reading past null terminator
                         if (ch1[i] != ch2[i]) {res = 0;}
                 }
         }

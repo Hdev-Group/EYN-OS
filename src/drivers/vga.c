@@ -9,7 +9,7 @@ void drawRect(multiboot_info_t *mbi, int x, int y, int w, int h, int r, int g, i
 {
 	int i, j;
 	unsigned char *video = (unsigned char *)mbi->framebuffer_addr;
-	unsigned int offset = (x + y * 1280) * 4; // find location of the pixel
+	unsigned int offset = (x + y * mbi->framebuffer_width) * 4; // find location of the pixel
 	for (i = 0; i < h; i++) {
 		for (j = 0; j < w; j++) // colouring in each line
         {
@@ -18,11 +18,11 @@ void drawRect(multiboot_info_t *mbi, int x, int y, int w, int h, int r, int g, i
 			video[offset + j * 4 + 2] = r;
 			video[offset + j * 4 + 3] = 0;
 		}
-		offset += 5120; // beginning of each line
+		offset += mbi->framebuffer_width * 4; // beginning of each line
 	}
 }
 
-void drawText(multiboot_info_t *mbi, int charnum)
+void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
 {
 	// store hex numbers representing the pattern for characters (8 numbers per character) into an array
     // i knicked all this off of github i cant lie, i am NOT writing this much hex
@@ -71,13 +71,13 @@ void drawText(multiboot_info_t *mbi, int charnum)
 	if (width > (mbi->framebuffer_width - 20))
     {
 		width = 0;
-		height = height + 16;
+		height = height + 8;
 	}
 	
-	if (width < -2 && height >34)
+	if (width < -2 && height > 34)
     {
-		width=1250;
-		height = height - 16;
+		width = mbi->framebuffer_width - 30;
+		height = height - 8;
 	}
 	
 	if (charnum == -1)
@@ -88,41 +88,33 @@ void drawText(multiboot_info_t *mbi, int charnum)
 
 	else if (charnum==10) // enter
     {
-		drawText(mbi, -1);
+		drawText(mbi, -1, r, g, b);
 		width = 0;
-		height = height + 16;
+		height = height + 8;
 	}
 
 	else if (charnum== 8) // backspace
     {
-		drawText(mbi, -1);
-		width = width - 32;
-		drawText(mbi, -1);
-		drawText(mbi, -1);
-		width = width - 32;
-		//drawText('_');
+		drawText(mbi, -1, r, g, b);
+		width = width - 16;
+		drawText(mbi, -1, r, g, b);
+		drawText(mbi, -1, r, g, b);
+		width = width - 16;
 	}
 
-	else // drawing characters in 16x16
+	else // drawing characters in 8x8
     {
-
 		for (k = 0; k < 8; k++)
         {
 			for (i = 0; i < 8; i++)
             {
 				if (font[charnum * 8 + k] & (0x01 << i))
                 {
-					for (w = 2 * (8 - i); w < 2 * (8 - i) + 2; w++)
-                    {
-						for (h = 2 * k; h < 2 * k + 2; h++)
-                        {
-							drawPixel(mbi, w + width, h + height, 255, 255, 255); // holy indentation
-						}
-					}
+					drawPixel(mbi, (8 - i) + width, k + height, r, g, b);
 				}
 			}
 		}
-		width = width + 16; // move to draw the next character
+		width = width + 8; // move to draw the next character
 	}
 }
 
@@ -132,6 +124,15 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 	va_start(ap, format);
 
 	uint8 *ptr;
+	int r = 255, g = 255, b = 255; // Default to white
+
+	// Check if color parameters are provided
+	if (format[0] == '%' && format[1] == 'c') {
+		r = va_arg(ap, int);
+		g = va_arg(ap, int);
+		b = va_arg(ap, int);
+		format += 2; // Skip the color format specifier
+	}
 
 	for (ptr = format; *ptr != '\0'; ptr++) 
     {
@@ -139,24 +140,24 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 			ptr++;
 			switch (*ptr) {
 				case 's':
-					printf(mbi, va_arg(ap, uint8 *));
+					printf(mbi, va_arg(ap, uint8 *), r, g, b);
 					break;
-				//case 'c':
-					//printf(char_to_string(va_arg(ap, uint8 *)));
 				case 'd':
-					printf(mbi, int_to_string(va_arg(ap, int)));
+					printf(mbi, int_to_string(va_arg(ap, int)), r, g, b);
 					break;
 				case '%':
-					drawText(mbi, '%');
+					drawText(mbi, '%', r, g, b);
+					break;
+				case 'c':  // Handle color format specifier
+					drawText(mbi, *ptr, r, g, b);
 					break;
 			}
 		} else {
-			drawText(mbi, *ptr);
+			drawText(mbi, *ptr, r, g, b);
 		}
 	}
 
 	va_end(ap);
-
 }
 
 void drawPixel(multiboot_info_t *mbi, int x, int y, int r, int g, int b) 

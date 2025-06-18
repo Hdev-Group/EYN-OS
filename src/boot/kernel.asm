@@ -20,8 +20,8 @@ section .text
         dd 0 ; skip over load of flags
 
         dd 0 ; graphical mode
-        dd 1280 ; width of screen
-        dd 720 ; height of screen
+        dd 640 ; width of screen
+        dd 480 ; height of screen
         dd 32 ; bit depth
 
 global start
