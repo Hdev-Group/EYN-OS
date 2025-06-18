@@ -1,11 +1,8 @@
-# EYN-OS
-# DEVELOPMENT BUILD
+# EYN-OS - DEVELOPMENT BUILD
 
 It's here. Well, a bit of it at least.
 
 It's mostly unfinished, but there's a kernel and a basic shell. There's some pretty good C integration too, so you can easily add features of your own.
-
-### DO NOT USE, SHELL FAILS AFTER ONE COMMAND ###
 
 ---
 
