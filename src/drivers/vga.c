@@ -95,12 +95,12 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
 
 	else if (charnum== 8) // backspace
     {
-		drawText(mbi, -1, r, g, b);
-		width = width - 16;
-		drawText(mbi, -1, r, g, b);
-		drawText(mbi, -1, r, g, b);
-		width = width - 16;
-	}
+        if (width > 0) {  // Only backspace if we're not at the start of a line
+            width = width - 8;  // Move back one character width
+            // Draw a black rectangle to erase the previous character
+            drawRect(mbi, width, height, 8, 8, 0, 0, 0);
+        }
+    }
 
 	else // drawing characters in 8x8
     {
