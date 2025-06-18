@@ -15,20 +15,19 @@ uint8 cmdLength(string ch) {
         uint8 realSize = strlength(ch);
         uint8 hasSpace = 0;
 
-        string space;
-        space[0] = ' ';
+        // If the string is empty, return 0
+        if (realSize == 0) return 0;
 
-        for (i; i < realSize; i++) {  // Changed <= to < to avoid reading past null terminator
-                if (hasSpace == 0) {
-                        if (ch[i] != space[0]) {
-                                size++;
-                        } else {
-                                hasSpace = 1;
-                        }
-                }
+        // If there's no space, return the full length
+        for (i = 0; i < realSize; i++) {
+            if (ch[i] == ' ') {
+                hasSpace = 1;
+                break;
+            }
+            size++;
         }
         
-        return size;  // Removed the unnecessary size adjustments
+        return size;
 }
 
 uint8 isStringEmpty(string ch1) {

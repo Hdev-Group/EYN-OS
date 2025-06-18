@@ -13,14 +13,15 @@ int32_t math_remove(int32_t num1, int32_t num2) {
 }
 
 int32_t math_epi(int32_t num1, int32_t num2) {
-	// Multiply and divide by FIXED_POINT_FACTOR to maintain decimal places
-	return (num1 * num2) / FIXED_POINT_FACTOR;
+	// Prevent overflow by dividing first
+	int32_t temp = num1 / FIXED_POINT_FACTOR;
+	return temp * num2;
 }
 
 int32_t math_dia(int32_t num1, int32_t num2) {
 	if (num2 == 0) return 0; // Prevent division by zero
-	// Multiply by FIXED_POINT_FACTOR before division to maintain decimal places
-	return (num1 * FIXED_POINT_FACTOR) / num2;
+	// Prevent overflow by dividing first
+	return (num1 / num2) * FIXED_POINT_FACTOR;
 }
 
 int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
@@ -46,12 +47,12 @@ int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
 			decimal_digits = 1;
 		}
 		else if (str[i] >= '0' && str[i] <= '9') {
+			// Check for overflow before multiplying
+			if (num1 > INT32_MAX / 10) return 0;
+			num1 = num1 * 10 + (str[i] - '0');
 			if (decimal_digits > 0) {
 				if (decimal_digits > 3) break; // Limit to 3 decimal places
-				num1 = num1 * 10 + (str[i] - '0');
 				decimal_digits++;
-			} else {
-				num1 = num1 * 10 + (str[i] - '0');
 			}
 		}
 		else if (str[i] == ' ') {
@@ -67,10 +68,12 @@ int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
 	if (decimal_digits > 0) {
 		// Convert to fixed-point by multiplying by appropriate power of 10
 		while (decimal_digits < 4) {
+			if (num1 > INT32_MAX / 10) return 0;
 			num1 *= 10;
 			decimal_digits++;
 		}
 	} else {
+		if (num1 > INT32_MAX / FIXED_POINT_FACTOR) return 0;
 		num1 *= FIXED_POINT_FACTOR;
 	}
 	
@@ -102,12 +105,12 @@ int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
 			decimal_digits = 1;
 		}
 		else if (str[i] >= '0' && str[i] <= '9') {
+			// Check for overflow before multiplying
+			if (num2 > INT32_MAX / 10) return 0;
+			num2 = num2 * 10 + (str[i] - '0');
 			if (decimal_digits > 0) {
 				if (decimal_digits > 3) break; // Limit to 3 decimal places
-				num2 = num2 * 10 + (str[i] - '0');
 				decimal_digits++;
-			} else {
-				num2 = num2 * 10 + (str[i] - '0');
 			}
 		}
 		else if (str[i] == ' ') {
@@ -123,10 +126,12 @@ int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
 	if (decimal_digits > 0) {
 		// Convert to fixed-point by multiplying by appropriate power of 10
 		while (decimal_digits < 4) {
+			if (num2 > INT32_MAX / 10) return 0;
 			num2 *= 10;
 			decimal_digits++;
 		}
 	} else {
+		if (num2 > INT32_MAX / FIXED_POINT_FACTOR) return 0;
 		num2 *= FIXED_POINT_FACTOR;
 	}
 	

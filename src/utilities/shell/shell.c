@@ -102,8 +102,7 @@ void launch_shell(int n, multiboot_info_t *mbi)
 {
 	string ch = (string) malloc(200); // util.h
 	string data[64];
-	string prompt = "! ";
-	printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
+	printf(mbi, "%c%s", 255, 255, 0, "! ");  // yellow prompt
 	do
 	{
 		ch = readStr(mbi);
@@ -111,42 +110,34 @@ void launch_shell(int n, multiboot_info_t *mbi)
 		{
 			printf(mbi, "%c\nNew recursive shell opened.\n", 0, 255, 0);  // green
 			launch_shell(n+1, mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"clear"))
 		{
 			clearScreen(mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"echo"))
 		{
 			echo(mbi, ch);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"help"))
 		{
 			help(mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"spam"))
 		{
 			joke_spam(mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"ver"))
 		{
 			ver(mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"draw"))
 		{
 			drawRect(mbi, 10, 10, 500, 200, 255, 255, 255);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"calc"))
 		{
 			calc(ch, mbi);
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
 		}
 		else if(cmdEql(ch,"exit"))
 		{
@@ -157,7 +148,10 @@ void launch_shell(int n, multiboot_info_t *mbi)
 		{
 			printf(mbi, "%c\n", 255, 0, 0);
 			printf(mbi, "%c%s isn't a valid command\n", 255, 0, 0, ch);  // print error in red
-			printf(mbi, "%c%s", 255, 255, 0, prompt);  // yellow prompt
+		}
+		
+		if (!cmdEql(ch,"exit")) {
+			printf(mbi, "%c%s", 255, 255, 0, "! ");  // yellow prompt
 		}
 	} while (!cmdEql(ch,"exit"));
 }
