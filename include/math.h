@@ -12,6 +12,6 @@ int32_t math_add(int32_t num1, int32_t num2);
 int32_t math_remove(int32_t num1, int32_t num2);
 int32_t math_epi(int32_t num1, int32_t num2);
 int32_t math_dia(int32_t num1, int32_t num2);
-int32_t math_get_current_equation(string str, multiboot_info_t *mbi);
+int32_t math_get_current_equation(string str);
 
 #endif

@@ -4,6 +4,8 @@
 #include "../../../include/multiboot.h"
 #include "../../../include/math.h"
 
+extern multiboot_info_t *g_mbi;
+
 int32_t math_add(int32_t num1, int32_t num2) {
 	return (num1 + num2);
 }
@@ -24,7 +26,7 @@ int32_t math_dia(int32_t num1, int32_t num2) {
 	return (num1 / num2) * FIXED_POINT_FACTOR;
 }
 
-int32_t math_get_current_equation(string str, multiboot_info_t *mbi) {
+int32_t math_get_current_equation(string str) {
 	if (!str) return 0;
 	
 	uint8 size = strlength(str);

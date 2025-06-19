@@ -3,6 +3,6 @@
 #include "types.h"
 #include "multiboot.h"
 
-string readStr(multiboot_info_t *mbi);
+string readStr();
 
 #endif

@@ -3,14 +3,16 @@
 #include "../../include/util.h"
 #include <stdarg.h>
 
+extern multiboot_info_t *g_mbi;
+
 int width, height;
 int r = 255, g = 255, b = 255; // Default to white
 
-void drawRect(multiboot_info_t *mbi, int x, int y, int w, int h, int r, int g, int b)
+void drawRect(int x, int y, int w, int h, int r, int g, int b)
 {
 	int i, j;
-	unsigned char *video = (unsigned char *)mbi->framebuffer_addr;
-	unsigned int offset = (x + y * mbi->framebuffer_width) * 4; // find location of the pixel
+	unsigned char *video = (unsigned char *)g_mbi->framebuffer_addr;
+	unsigned int offset = (x + y * g_mbi->framebuffer_width) * 4; // find location of the pixel
 	for (i = 0; i < h; i++) {
 		for (j = 0; j < w; j++) // colouring in each line
         {
@@ -19,11 +21,11 @@ void drawRect(multiboot_info_t *mbi, int x, int y, int w, int h, int r, int g, i
 			video[offset + j * 4 + 2] = r;
 			video[offset + j * 4 + 3] = 0;
 		}
-		offset += mbi->framebuffer_width * 4; // beginning of each line
+		offset += g_mbi->framebuffer_width * 4; // beginning of each line
 	}
 }
 
-void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
+void drawText(int charnum, int r, int g, int b)
 {
 	// store hex numbers representing the pattern for characters (8 numbers per character) into an array
     // i knicked all this off of github i cant lie, i am NOT writing this much hex
@@ -62,14 +64,14 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
 	int h; // vertical position of the pixel in the 8x8 pattern
 	
 
-	if (height == (mbi->framebuffer_height)) 
+	if (height == (g_mbi->framebuffer_height)) 
     {
-		clearScreen(mbi); // "scrolling"
+		clearScreen(); // "scrolling"
 	}
 
 	// charnum = charnum + 1;
 	// Moving the cursor to the next line when we reached the end of the existing line
-	if (width > (mbi->framebuffer_width - 20))
+	if (width > (g_mbi->framebuffer_width - 20))
     {
 		width = 0;
 		height = height + 8;
@@ -77,19 +79,19 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
 	
 	if (width < -2 && height > 34)
     {
-		width = mbi->framebuffer_width - 30;
+		width = g_mbi->framebuffer_width - 30;
 		height = height - 8;
 	}
 	
 	if (charnum == -1)
     {
-		drawRect(mbi, width, height, 16, 16, 0, 0, 0);
+		drawRect(width, height, 16, 16, 0, 0, 0);
 		width=width+16;
 	}
 
 	else if (charnum==10) // enter
     {
-		drawText(mbi, -1, r, g, b);
+		drawText(-1, r, g, b);
 		width = 0;
 		height = height + 8;
 	}
@@ -99,7 +101,7 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
         if (width > 0) {  // Only backspace if we're not at the start of a line
             width = width - 8;  // Move back one character width
             // Draw a black rectangle to erase the previous character
-            drawRect(mbi, width, height, 8, 8, 0, 0, 0);
+            drawRect(width, height, 8, 8, 0, 0, 0);
         }
     }
 
@@ -111,7 +113,7 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
             {
 				if (font[charnum * 8 + k] & (0x01 << i))
                 {
-					drawPixel(mbi, (8 - i) + width, k + height, r, g, b);
+					drawPixel((8 - i) + width, k + height, r, g, b);
 				}
 			}
 		}
@@ -119,13 +121,18 @@ void drawText(multiboot_info_t *mbi, int charnum, int r, int g, int b)
 	}
 }
 
-void printf(multiboot_info_t *mbi, const char* format, ...) 
+void printf(const char* format, ...) 
 {
 	va_list ap;
 	va_start(ap, format);
 
 	uint8 *ptr;
 	static int r = 255, g = 255, b = 255; // Default to white, static to maintain state
+
+	// Reset color to white at the start of each printf call
+	r = 255;
+	g = 255;
+	b = 255;
 
 	// Check if color parameters are provided
 	if (format[0] == '%' && format[1] == 'c') {
@@ -143,7 +150,7 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 				case 's': {
 					char* str = va_arg(ap, char*);
 					while (*str) {
-						drawText(mbi, *str, r, g, b);
+						drawText(*str, r, g, b);
 						str++;
 					}
 					break;
@@ -151,31 +158,35 @@ void printf(multiboot_info_t *mbi, const char* format, ...)
 				case 'd': {
 					char* num_str = int_to_string(va_arg(ap, int));
 					while (*num_str) {
-						drawText(mbi, *num_str, r, g, b);
+						drawText(*num_str, r, g, b);
 						num_str++;
 					}
 					break;
 				}
 				case '%':
-					drawText(mbi, '%', r, g, b);
+					drawText('%', r, g, b);
 					break;
 				case 'c':
-					drawText(mbi, va_arg(ap, int), r, g, b);
+					drawText(va_arg(ap, int), r, g, b);
 					break;
 			}
+		} else if (*ptr == '\n') {
+			// Handle newline without drawing a character
+			width = 0;
+			height = height + 8;
 		} else {
-			drawText(mbi, *ptr, r, g, b);
+			drawText(*ptr, r, g, b);
 		}
 	}
 
 	va_end(ap);
 }
 
-void drawPixel(multiboot_info_t *mbi, int x, int y, int r, int g, int b) 
+void drawPixel(int x, int y, int r, int g, int b) 
 {
-	unsigned char *video = (unsigned char *)mbi->framebuffer_addr;
+	unsigned char *video = (unsigned char *)g_mbi->framebuffer_addr;
 	
-	unsigned int offset = (x + y * mbi->framebuffer_width) * 4; // finding loc of pixel
+	unsigned int offset = (x + y * g_mbi->framebuffer_width) * 4; // finding loc of pixel
 
 	video[offset] = b;   // setting the colour of pixel; blue, green, red
 	video[offset + 1] = g;
@@ -185,7 +196,7 @@ void drawPixel(multiboot_info_t *mbi, int x, int y, int r, int g, int b)
 	return;
 }
 
-void drawLine(multiboot_info_t *mbi, int x1, int y1, int x2, int y2, int r, int g, int b)
+void drawLine(int x1, int y1, int x2, int y2, int r, int g, int b)
 {
 
 	int dx = x2 - x1;      // the horizontal distance of the line
@@ -218,7 +229,7 @@ void drawLine(multiboot_info_t *mbi, int x1, int y1, int x2, int y2, int r, int 
         {
 			int tempy = dy*(px - x1);
 			py = y1 + tempy / dxabs;
-            drawPixel(mbi, px, py, r, g, b);
+            drawPixel(px, py, r, g, b);
 		}
 	}
 
@@ -236,16 +247,14 @@ void drawLine(multiboot_info_t *mbi, int x1, int y1, int x2, int y2, int r, int 
         {
 			int tempx = dx*(py - y1);
 			px = x1 + tempx / dyabs;
-            drawPixel(mbi, px, py, r, g, b);
+            drawPixel(px, py, r, g, b);
 		}
 	}
 }
 
-void clearScreen(multiboot_info_t *mbi) 
+void clearScreen() 
 {
-	drawRect(mbi, 0, 0, mbi->framebuffer_width, mbi->framebuffer_height, 0, 0, 0);
+	drawRect(0, 0, g_mbi->framebuffer_width, g_mbi->framebuffer_height, 0, 0, 0);
 	width = 0;
 	height = 0;
-	// Preserve color state by drawing a single character in the current color
-	drawText(mbi, ' ', 255, 255, 0);  // Draw a space in yellow to set the color state
 }
