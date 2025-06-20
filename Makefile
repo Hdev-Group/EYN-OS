@@ -76,6 +76,16 @@ fat32img:
 
 build: all fat32img
 	grub-mkrescue -o EYNOS.iso tmp/
+
+version:
+	@echo "Usage: make version VERSION=x.y"
+	@echo "Example: make version VERSION=0.09"
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION parameter is required"; \
+		echo "Example: make version VERSION=0.09"; \
+		exit 1; \
+	fi
+	./update_version.sh $(VERSION)
 	
 clear:
 	rm -f obj/*.o
