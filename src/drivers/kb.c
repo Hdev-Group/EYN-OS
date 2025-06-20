@@ -2,12 +2,13 @@
 #include "../../include/system.h"
 #include "../../include/vga.h"
 #include "../../include/multiboot.h"
+#include "../../include/util.h"
 #include <stdlib.h>
 
 extern multiboot_info_t *g_mbi;
 
 string readStr() {
-    string buffstr = (string) malloc(200);
+    string buffstr = (string) my_malloc(200);
     uint8 i = 0;
     uint8 reading = 1;
     uint8 shift_pressed = 0;  // Track shift key state
@@ -52,6 +53,7 @@ string readStr() {
             
             // Check for Ctrl+C
             if(ctrl_pressed && scancode == 46) {  // 'c' key
+                g_user_interrupt = 1;
                 buffstr[0] = '\0';  // Clear the buffer
                 reading = 0;        // Exit the reading loop
                 printf("%c^C\n", 255, 255, 255);  // Print ^C in white
@@ -609,4 +611,18 @@ string readStr() {
     }
     buffstr[i] = 0;  // Remove the i-1 to keep the last character
     return buffstr;
+}
+
+void poll_keyboard_for_ctrl_c() {
+    static uint8 ctrl_pressed = 0;
+    if (inportb(0x64) & 0x1) {
+        uint8 scancode = inportb(0x60);
+        if (scancode == 29) { // Ctrl press
+            ctrl_pressed = 1;
+        } else if (scancode == 157) { // Ctrl release
+            ctrl_pressed = 0;
+        } else if (ctrl_pressed && scancode == 46) { // 'c' key
+            g_user_interrupt = 1;
+        }
+    }
 }

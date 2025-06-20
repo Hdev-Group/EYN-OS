@@ -17,35 +17,35 @@ int fat32_read_bpb(void* disk_img, struct fat32_bpb* bpb) {
 // List root directory entries (simple, no subdirs, no LFN)
 int fat32_list_root(void* disk_img, struct fat32_bpb* bpb) {
     if (!disk_img || !bpb) return -1;
-    // Calculate root directory start
     uint32 byts_per_sec = bpb->BytsPerSec;
     uint32 sec_per_clus = bpb->SecPerClus;
     uint32 rsvd_sec_cnt = bpb->RsvdSecCnt;
     uint32 num_fats = bpb->NumFATs;
     uint32 fatsz = bpb->FATSz32;
     uint32 root_clus = bpb->RootClus;
-
-    // First data sector
     uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-    // Root dir sector
-    uint32 root_dir_sec = first_data_sec + ((root_clus - 2) * sec_per_clus);
-    uint32 root_dir_offset = root_dir_sec * byts_per_sec;
-
-    // List first 16 entries
-    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)((char*)disk_img + root_dir_offset);
-    for (int i = 0; i < 16; i++) {
-        if (entries[i].Name[0] == 0x00) break; // No more entries
-        if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
-        if (entries[i].Name[0] == 0xE5) continue; // Deleted
-        // Print name
-        char name[12];
-        for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
-        name[11] = '\0';
-        if (entries[i].Attr & 0x10) { // Directory
-            printf("%c%s <DIR>\n", 255, 255, 255, name);
-        } else {
-            printf("%c%s\n", 255, 255, 255, name);
+    
+    uint32 cluster = root_clus;
+    while (cluster < 0x0FFFFFF8) { // FAT32 end-of-chain
+        uint32 dir_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+        uint32 dir_offset = dir_sec * byts_per_sec;
+        struct fat32_dir_entry* entries = (struct fat32_dir_entry*)((char*)disk_img + dir_offset);
+        int entry_count = (byts_per_sec * sec_per_clus) / sizeof(struct fat32_dir_entry);
+        for (int i = 0; i < entry_count; i++) {
+            if (entries[i].Name[0] == 0x00) break; // No more entries
+            if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
+            if (entries[i].Name[0] == 0xE5) continue; // Deleted
+            // Print name
+            char name[12];
+            for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
+            name[11] = '\0';
+            if (entries[i].Attr & 0x10) { // Directory
+                printf("%c%s <DIR>\n", 255, 255, 255, name);
+            } else {
+                printf("%c%s\n", 255, 255, 255, name);
+            }
         }
+        cluster = fat32_next_cluster(disk_img, bpb, cluster);
     }
     return 0;
 }
@@ -58,39 +58,40 @@ int fat32_read_file(void* disk_img, struct fat32_bpb* bpb, const char* filename,
     uint32 num_fats = bpb->NumFATs;
     uint32 fatsz = bpb->FATSz32;
     uint32 root_clus = bpb->RootClus;
-
-    // First data sector
     uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-    // Root dir sector
-    uint32 root_dir_sec = first_data_sec + ((root_clus - 2) * sec_per_clus);
-    uint32 root_dir_offset = root_dir_sec * byts_per_sec;
-
-    // Find file in first 16 entries
-    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)((char*)disk_img + root_dir_offset);
-    for (int i = 0; i < 16; i++) {
-        if (entries[i].Name[0] == 0x00) break; // No more entries
-        if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
-        if (entries[i].Name[0] == 0xE5) continue; // Deleted
-        // Compare 8.3 name
-        int match = 1;
-        for (int j = 0; j < 11; j++) {
-            if (entries[i].Name[j] != filename[j]) {
-                match = 0;
-                break;
+    
+    uint32 cluster = root_clus;
+    while (cluster < 0x0FFFFFF8) { // FAT32 end-of-chain
+        uint32 dir_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+        uint32 dir_offset = dir_sec * byts_per_sec;
+        struct fat32_dir_entry* entries = (struct fat32_dir_entry*)((char*)disk_img + dir_offset);
+        int entry_count = (byts_per_sec * sec_per_clus) / sizeof(struct fat32_dir_entry);
+        for (int i = 0; i < entry_count; i++) {
+            if (entries[i].Name[0] == 0x00) break; // No more entries
+            if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
+            if (entries[i].Name[0] == 0xE5) continue; // Deleted
+            // Compare 8.3 name
+            int match = 1;
+            for (int j = 0; j < 11; j++) {
+                if (entries[i].Name[j] != filename[j]) {
+                    match = 0;
+                    break;
+                }
+            }
+            if (match) {
+                // Found file
+                uint32 file_size = entries[i].FileSize;
+                if (file_size > (uint32)bufsize) file_size = bufsize;
+                uint32 first_clus = ((uint32)entries[i].FstClusHI << 16) | entries[i].FstClusLO;
+                if (first_clus < 2) return -1;
+                // Read file data (no FAT walking, just first cluster)
+                uint32 data_sec = first_data_sec + ((first_clus - 2) * sec_per_clus);
+                uint32 data_offset = data_sec * byts_per_sec;
+                memory_copy((char*)disk_img + data_offset, buf, file_size);
+                return file_size;
             }
         }
-        if (match) {
-            // Found file
-            uint32 file_size = entries[i].FileSize;
-            if (file_size > (uint32)bufsize) file_size = bufsize;
-            uint32 first_clus = ((uint32)entries[i].FstClusHI << 16) | entries[i].FstClusLO;
-            if (first_clus < 2) return -1;
-            // Read file data (no FAT walking, just first cluster)
-            uint32 data_sec = first_data_sec + ((first_clus - 2) * sec_per_clus);
-            uint32 data_offset = data_sec * byts_per_sec;
-            memory_copy((char*)disk_img + data_offset, buf, file_size);
-            return file_size;
-        }
+        cluster = fat32_next_cluster(disk_img, bpb, cluster);
     }
     return -1; // Not found
 }
@@ -256,16 +257,19 @@ int fat32_write_file(void* disk_img, struct fat32_bpb* bpb, const char* filename
     return write_bytes;
 }
 
-// Sector-buffered FAT32 functions for real disk access
-int fat32_read_bpb_sector(uint8 drive, struct fat32_bpb* bpb) {
+// Read BPB from a given partition start sector
+int fat32_read_bpb_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb) {
     if (!bpb) return -1;
     uint8 sector[512];
-    if (ata_read_sector(drive, 0, sector) != 0) return -1;
+    if (ata_read_sector(drive, partition_lba_start, sector) != 0) {
+        return -1;
+    }
     memory_copy((char*)sector, (char*)bpb, sizeof(struct fat32_bpb));
     return 0;
 }
 
-int fat32_list_root_sector(uint8 drive, struct fat32_bpb* bpb) {
+// List root directory entries from a real drive
+int fat32_list_root_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb) {
     if (!bpb) return -1;
     uint32 byts_per_sec = bpb->BytsPerSec;
     uint32 sec_per_clus = bpb->SecPerClus;
@@ -274,47 +278,36 @@ int fat32_list_root_sector(uint8 drive, struct fat32_bpb* bpb) {
     uint32 fatsz = bpb->FATSz32;
     uint32 root_clus = bpb->RootClus;
     uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-    uint32 root_dir_sec = first_data_sec + ((root_clus - 2) * sec_per_clus);
     
-    printf("%cCluster size: %d sectors, Root cluster: %d, Start sector: %d\n", 255, 255, 255, sec_per_clus, root_clus, root_dir_sec);
-    
-    // Read all sectors in the root directory cluster
     uint8 sector[512];
-    int total_entries = 0;
-    for (uint32 sec = 0; sec < sec_per_clus; sec++) {
-        printf("%cReading sector %d...\n", 255, 255, 255, root_dir_sec + sec);
-        if (ata_read_sector(drive, root_dir_sec + sec, sector) != 0) {
-            printf("%cFailed to read root directory sector %d\n", 255, 0, 0, sec);
-            return -1;
-        }
-        struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
-        int entries_in_sector = 0;
-        // Process all 16 entries per sector (512 bytes / 32 bytes per entry)
-        for (int i = 0; i < 16; i++) {
-            if (entries[i].Name[0] == 0x00) {
-                printf("%cEnd of directory found at entry %d in sector %d\n", 255, 255, 255, i, sec);
-                return 0; // End of directory
+    uint32 cluster = root_clus;
+    while (cluster < 0x0FFFFFF8) {
+        uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+        for (uint32 sec = 0; sec < sec_per_clus; sec++) {
+            if (ata_read_sector(drive, partition_lba_start + cluster_first_sec + sec, sector) != 0) {
+                return -2;
             }
-            if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
-            if (entries[i].Name[0] == 0xE5) continue; // Skip deleted
-            char name[12];
-            for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
-            name[11] = '\0';
-            if (entries[i].Attr & 0x10) {
-                printf("%c%s <DIR>\n", 255, 255, 255, name);
-            } else {
-                printf("%c%s\n", 255, 255, 255, name);
+            struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
+            for (int i = 0; i < (byts_per_sec / sizeof(struct fat32_dir_entry)); i++) {
+                if (entries[i].Name[0] == 0x00) break;
+                if ((entries[i].Attr & 0x0F) == 0x0F) continue;
+                if (entries[i].Name[0] == 0xE5) continue;
+                char name[12];
+                for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
+                name[11] = '\0';
+                if (entries[i].Attr & 0x10) {
+                    printf("%c%s <DIR>\n", 255, 255, 255, name);
+                } else {
+                    printf("%c%s\n", 255, 255, 255, name);
+                }
             }
-            entries_in_sector++;
-            total_entries++;
         }
-        printf("%cFound %d entries in sector %d\n", 255, 255, 255, entries_in_sector, sec);
+        cluster = fat32_next_cluster_sector(drive, partition_lba_start, bpb, cluster);
     }
-    printf("%cTotal entries found: %d\n", 255, 255, 255, total_entries);
     return 0;
 }
 
-int fat32_read_file_sector(uint8 drive, struct fat32_bpb* bpb, const char* filename, char* buf, int bufsize) {
+int fat32_read_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, const char* filename, char* buf, int bufsize) {
     if (!bpb || !filename || !buf) return -1;
     uint32 byts_per_sec = bpb->BytsPerSec;
     uint32 sec_per_clus = bpb->SecPerClus;
@@ -323,19 +316,20 @@ int fat32_read_file_sector(uint8 drive, struct fat32_bpb* bpb, const char* filen
     uint32 fatsz = bpb->FATSz32;
     uint32 root_clus = bpb->RootClus;
     uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-    uint32 root_dir_sec = first_data_sec + ((root_clus - 2) * sec_per_clus);
     
-    // Search for file in root directory
     uint8 sector[512];
+    uint32 cluster = root_clus;
+    while (cluster < 0x0FFFFFF8) {
+        uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
     for (uint32 sec = 0; sec < sec_per_clus; sec++) {
-        if (ata_read_sector(drive, root_dir_sec + sec, sector) != 0) return -1;
+            if (ata_read_sector(drive, partition_lba_start + cluster_first_sec + sec, sector) != 0) {
+                return -2;
+            }
         struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
-        for (int i = 0; i < 16; i++) {
-            if (entries[i].Name[0] == 0x00) return -1; // End of directory, file not found
-            if ((entries[i].Attr & 0x0F) == 0x0F) continue; // Skip LFN
-            if (entries[i].Name[0] == 0xE5) continue; // Skip deleted
-            
-            // Compare filename
+            for (int i = 0; i < (byts_per_sec / sizeof(struct fat32_dir_entry)); i++) {
+                if (entries[i].Name[0] == 0x00) break;
+                if ((entries[i].Attr & 0x0F) == 0x0F) continue;
+                if (entries[i].Name[0] == 0xE5) continue;
             int match = 1;
             for (int j = 0; j < 11; j++) {
                 if (entries[i].Name[j] != filename[j]) {
@@ -343,27 +337,284 @@ int fat32_read_file_sector(uint8 drive, struct fat32_bpb* bpb, const char* filen
                     break;
                 }
             }
-            
             if (match) {
-                // Found the file
                 uint32 file_size = entries[i].FileSize;
+                    if (file_size > (uint32)bufsize) file_size = bufsize;
                 uint32 first_clus = ((uint32)entries[i].FstClusHI << 16) | entries[i].FstClusLO;
-                if (first_clus < 2) return -1;
+                    if (first_clus < 2) return -3;
                 
-                printf("%cFile found: size=%d bytes, first cluster=%d\n", 255, 255, 255, file_size, first_clus);
-                
-                // For now, just read the first cluster (simplified)
-                uint32 data_sec = first_data_sec + ((first_clus - 2) * sec_per_clus);
-                uint32 bytes_to_read = file_size;
-                if (bytes_to_read > bufsize) bytes_to_read = bufsize;
-                if (bytes_to_read > byts_per_sec * sec_per_clus) bytes_to_read = byts_per_sec * sec_per_clus;
-                
-                // Read the first sector of the file
-                if (ata_read_sector(drive, data_sec, (uint8*)buf) != 0) return -1;
-                
-                return bytes_to_read;
+                uint32 bytes_read = 0;
+                    uint32 current_clus = first_clus;
+                    while (current_clus < 0x0FFFFFF8 && bytes_read < file_size) {
+                        uint32 data_sec = first_data_sec + ((current_clus - 2) * sec_per_clus);
+                    for (uint32 s = 0; s < sec_per_clus && bytes_read < file_size; s++) {
+                            if (ata_read_sector(drive, partition_lba_start + data_sec + s, sector) != 0) {
+                                return -4;
+                            }
+                        uint32 to_copy = byts_per_sec;
+                        if (bytes_read + to_copy > file_size) to_copy = file_size - bytes_read;
+                        memory_copy((char*)sector, buf + bytes_read, to_copy);
+                        bytes_read += to_copy;
+                        }
+                        current_clus = fat32_next_cluster_sector(drive, partition_lba_start, bpb, current_clus);
+                    }
+                    return bytes_read;
+                }
             }
         }
+        cluster = fat32_next_cluster_sector(drive, partition_lba_start, bpb, cluster);
     }
-    return -1; // File not found
-} 
+    return -1; // Not found
+}
+
+
+int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, const char* filename, const char* buf, int bufsize) {
+    if (!bpb || !filename || !buf || bufsize <= 0) return -1;
+    uint32 byts_per_sec = bpb->BytsPerSec;
+    uint32 sec_per_clus = bpb->SecPerClus;
+    uint32 rsvd_sec_cnt = bpb->RsvdSecCnt;
+    uint32 num_fats = bpb->NumFATs;
+    uint32 fatsz = bpb->FATSz32;
+    uint32 root_clus = bpb->RootClus;
+    uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
+
+    uint8 sector[512];
+    uint32 free_entry_clus = 0;
+    int free_entry_idx = -1;
+    uint32 free_entry_sec_in_clus = 0;
+    int free_entry_sec_in_disk = 0;
+
+    // First, check if file exists and find a free directory entry
+    uint32 cluster = root_clus;
+    while(cluster < 0x0FFFFFF8) {
+        uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+        for (uint32 sec = 0; sec < sec_per_clus; sec++) {
+            if (ata_read_sector(drive, partition_lba_start + cluster_first_sec + sec, sector) != 0) return -10;
+            sleep(1);
+            struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
+            for (int i = 0; i < (byts_per_sec / sizeof(struct fat32_dir_entry)); i++) {
+                if (entries[i].Name[0] == 0x00 || entries[i].Name[0] == 0xE5) {
+                    if (free_entry_idx == -1) {
+                        free_entry_clus = cluster;
+                        free_entry_idx = i;
+                        free_entry_sec_in_clus = sec;
+                        free_entry_sec_in_disk = partition_lba_start + cluster_first_sec + sec;
+                    }
+                    continue;
+                }
+                int match = 1;
+                for(int j=0; j<11; j++) if(entries[i].Name[j] != filename[j]) { match=0; break; }
+                if(match) return -2; // file exists
+            }
+        }
+        cluster = fat32_next_cluster_sector(drive, partition_lba_start, bpb, cluster);
+    }
+
+    if (free_entry_idx == -1) return -3; // no free dir entry
+
+    // Find free cluster in FAT
+    uint32 fat_sec_num = rsvd_sec_cnt;
+    uint32 total_clusters = (bpb->TotSec32 - first_data_sec) / sec_per_clus;
+    uint32 free_clus = 0;
+
+    for(uint32 i = 2; i < total_clusters + 2; i++) {
+        uint32 current_fat_sec = rsvd_sec_cnt + (i * 4 / byts_per_sec);
+        if (ata_read_sector(drive, partition_lba_start + current_fat_sec, sector) != 0) return -5;
+        sleep(1);
+        uint32* fat = (uint32*)sector;
+        uint32 fat_idx = i % (byts_per_sec/4);
+        if((fat[fat_idx] & 0x0FFFFFFF) == 0) {
+            free_clus = i;
+            break;
+        }
+    }
+
+    if (free_clus == 0) return -4; // no free cluster
+
+    // Write data to cluster
+    uint32 data_sec = first_data_sec + ((free_clus - 2) * sec_per_clus);
+    int max_bytes = byts_per_sec * sec_per_clus;
+    int write_bytes = bufsize > max_bytes ? max_bytes : bufsize;
+
+    // We can only write 512 bytes at a time for now.
+    if(write_bytes > 512) write_bytes = 512;
+    memory_copy((char*)buf, (char*)sector, write_bytes);
+    if(write_bytes < 512) memory_set(sector + write_bytes, 0, 512 - write_bytes);
+    if(ata_write_sector(drive, partition_lba_start + data_sec, sector) != 0) return -6;
+    sleep(1);
+
+    // Update FAT
+    uint32 fat_sector_for_free_clus = rsvd_sec_cnt + (free_clus * 4 / byts_per_sec);
+    if (ata_read_sector(drive, partition_lba_start + fat_sector_for_free_clus, sector) != 0) return -7;
+    sleep(1);
+    uint32* fat = (uint32*)sector;
+    uint32 fat_idx = free_clus % (byts_per_sec / 4);
+    fat[fat_idx] = 0x0FFFFFF8; // EOC
+    if (ata_write_sector(drive, partition_lba_start + fat_sector_for_free_clus, sector) != 0) return -8;
+    sleep(1);
+
+    // Update directory entry
+    if(ata_read_sector(drive, free_entry_sec_in_disk, sector) != 0) return -9;
+    sleep(1);
+    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
+    struct fat32_dir_entry* entry = &entries[free_entry_idx];
+    for (int j=0; j<11; j++) entry->Name[j] = filename[j];
+    entry->Attr = 0x20;
+    entry->NTRes = 0;
+    entry->CrtTimeTenth = 0;
+    entry->CrtTime = 0;
+    entry->CrtDate = 0;
+    entry->LstAccDate = 0;
+    entry->FstClusHI = (free_clus >> 16) & 0xFFFF;
+    entry->FstClusLO = free_clus & 0xFFFF;
+    entry->FileSize = write_bytes;
+
+    if (ata_write_sector(drive, free_entry_sec_in_disk, sector) != 0) return -9;
+    sleep(1);
+
+    return 0;
+}
+
+// Helper: get next cluster in chain from sector-based device
+uint32 fat32_next_cluster_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, uint32 cluster) {
+    uint8 sector[512];
+    uint32 fat_offset = bpb->RsvdSecCnt;
+    uint32 fat_sec_num = fat_offset + (cluster * 4 / bpb->BytsPerSec);
+    if (ata_read_sector(drive, partition_lba_start + fat_sec_num, sector) != 0) {
+        return 0x0FFFFFF8; // error condition
+    }
+    uint32* fat = (uint32*)sector;
+    uint32 fat_index = cluster % (bpb->BytsPerSec / 4);
+    return fat[fat_index] & 0x0FFFFFFF;
+}
+
+// Find and return the LBA start of the first valid FAT32 partition
+uint32 fat32_get_partition_lba_start(uint8 drive) {
+    uint8 mbr[512];
+    if (ata_read_sector(drive, 0, mbr) != 0) {
+        return 0; // Cannot read MBR
+    }
+    // Check for MBR signature
+    if (mbr[510] != 0x55 || mbr[511] != 0xAA) {
+        // No valid MBR, assume it's a superfloppy disk starting at LBA 0
+        return 0;
+    }
+    // Scan partition table
+    for (int i = 0; i < 4; i++) {
+        uint8* entry = mbr + 0x1BE + i * 16;
+        uint8 type = entry[4];
+        // Check for FAT32 types (0x0B, 0x0C are common)
+        if (type == 0x0B || type == 0x0C) {
+            uint32 start_lba = entry[8] | (entry[9]<<8) | (entry[10]<<16) | (entry[11]<<24);
+            return start_lba;
+        }
+    }
+    
+    // Fallback for user-created partition type, if no standard one is found
+    for (int i = 0; i < 4; i++) {
+        uint8* entry = mbr + 0x1BE + i * 16;
+        uint8 type = entry[4];
+        if (type != 0) { // any non-empty partition
+            uint32 start_lba = entry[8] | (entry[9]<<8) | (entry[10]<<16) | (entry[11]<<24);
+            return start_lba;
+        }
+    }
+
+    return 0; // No FAT32 partition found
+}
+
+int fat32_format_partition(uint8 drive, uint8 partition_num) {
+    if (partition_num < 1 || partition_num > 4) return -1;
+
+    uint8 mbr[512];
+    if (ata_read_sector(drive, 0, mbr) != 0) return -2;
+    if (mbr[510] != 0x55 || mbr[511] != 0xAA) return -3;
+
+    uint8* entry_ptr = mbr + 0x1BE + (partition_num - 1) * 16;
+    uint8 type = entry_ptr[4];
+    uint32 start_lba = entry_ptr[8] | (entry_ptr[9]<<8) | (entry_ptr[10]<<16) | (entry_ptr[11]<<24);
+    uint32 total_sectors = entry_ptr[12] | (entry_ptr[13]<<8) | (entry_ptr[14]<<16) | (entry_ptr[15]<<24);
+
+    printf("%c[Debug] Formatting part %d: type=%d, start=%d, size=%d\n", 0, 255, 255, partition_num, type, start_lba, total_sectors);
+
+    if (type == 0 || total_sectors == 0) return -4;
+
+    struct fat32_bpb bpb;
+    memory_set((uint8*)&bpb, 0, sizeof(bpb));
+
+    bpb.jmpBoot[0] = 0xEB; bpb.jmpBoot[1] = 0x58; bpb.jmpBoot[2] = 0x90;
+    memory_copy("EYN-OS  ", (char*)bpb.OEMName, 8);
+    bpb.BytsPerSec = 512;
+    if (total_sectors < 65536) bpb.SecPerClus = 1;
+    else if (total_sectors < 524288) bpb.SecPerClus = 8;
+    else bpb.SecPerClus = 16;
+    bpb.RsvdSecCnt = 32;
+    bpb.NumFATs = 2;
+    bpb.Media = 0xF8;
+    bpb.HiddSec = start_lba;
+    bpb.TotSec32 = total_sectors;
+
+    uint32 data_sec = total_sectors - bpb.RsvdSecCnt;
+    uint32 cluster_count = data_sec / bpb.SecPerClus;
+    uint32 fat_sz32 = (cluster_count * 4 + bpb.BytsPerSec - 1) / bpb.BytsPerSec;
+    bpb.FATSz32 = fat_sz32;
+
+    bpb.RootClus = 2;
+    bpb.FSInfo = 1;
+    bpb.BkBootSec = 6;
+    bpb.DrvNum = 0x80;
+    bpb.BootSig = 0x29;
+    bpb.VolID = 1337;
+    memory_copy("NO NAME    ", (char*)bpb.VolLab, 11);
+    memory_copy("FAT32   ", (char*)bpb.FilSysType, 8);
+    
+    uint8 sector[512];
+    memory_copy((char*)&bpb, (char*)sector, sizeof(bpb));
+    memory_set(sector + sizeof(bpb), 0, 512 - sizeof(bpb));
+    sector[510] = 0x55; sector[511] = 0xAA;
+
+    if (ata_write_sector(drive, start_lba, sector) != 0) return -5;
+    sleep(1);
+    if (ata_write_sector(drive, start_lba + bpb.BkBootSec, sector) != 0) return -6;
+    sleep(1);
+
+    memory_set(sector, 0, 512);
+    sector[0] = 0x52; sector[1] = 0x52; sector[2] = 0x61; sector[3] = 0x41;
+    sector[484] = 0x72; sector[485] = 0x72; sector[486] = 0x41; sector[487] = 0x61;
+    uint32 free_clusters = cluster_count - 1;
+    *((uint32*)(sector + 488)) = free_clusters;
+    *((uint32*)(sector + 492)) = 3; // Next free
+    sector[510] = 0x55; sector[511] = 0xAA;
+    if (ata_write_sector(drive, start_lba + bpb.FSInfo, sector) != 0) return -7;
+    sleep(1);
+
+    memory_set(sector, 0, 512);
+    for (uint32 f = 0; f < bpb.NumFATs; f++) {
+        uint32 fat_start = start_lba + bpb.RsvdSecCnt + (f * bpb.FATSz32);
+        for (uint32 i = 0; i < bpb.FATSz32; i++) {
+            if (ata_write_sector(drive, fat_start + i, sector) != 0) return -8;
+            sleep(1);
+        }
+    }
+    
+    memory_set(sector, 0, 512);
+    uint32* fat = (uint32*)sector;
+    fat[0] = 0x0FFFFFF8;
+    fat[1] = 0x0FFFFFFF;
+    fat[2] = 0x0FFFFFFF;
+    for (uint32 f = 0; f < bpb.NumFATs; f++) {
+        uint32 fat_start = start_lba + bpb.RsvdSecCnt + (f * bpb.FATSz32);
+        if (ata_write_sector(drive, fat_start, sector) != 0) return -9;
+        sleep(1);
+    }
+    
+    uint32 first_data_sec = bpb.RsvdSecCnt + (bpb.NumFATs * bpb.FATSz32);
+    uint32 root_dir_start_sec = start_lba + first_data_sec;
+    memory_set(sector, 0, 512);
+    for (uint8 i = 0; i < bpb.SecPerClus; i++) {
+        if (ata_write_sector(drive, root_dir_start_sec + i, sector) != 0) return -12;
+        sleep(1);
+    }
+
+    return 0;
+}

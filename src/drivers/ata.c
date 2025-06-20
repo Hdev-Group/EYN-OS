@@ -47,6 +47,7 @@ static int ata_poll(uint16 io_base) {
 int ata_identify(uint8 drive, uint16* identify_data) {
     uint16 io_base = (drive & 2) ? ATA_SECONDARY_IO : ATA_PRIMARY_IO;
     uint8 slavebit = (drive & 1) ? 0xB0 : 0xA0;
+    printf("%c[ATA] Probing drive %d at IO base %d\n", 255,255,0, drive, (int)io_base);
     outportb(io_base + ATA_REG_HDDEVSEL, slavebit);
     ata_io_wait(io_base);
     outportb(io_base + ATA_REG_SECCOUNT0, 0);
@@ -55,7 +56,12 @@ int ata_identify(uint8 drive, uint16* identify_data) {
     outportb(io_base + ATA_REG_LBA2, 0);
     outportb(io_base + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
     ata_io_wait(io_base);
-    if (inportb(io_base + ATA_REG_STATUS) == 0) return -1;
+    uint8 status = inportb(io_base + ATA_REG_STATUS);
+    printf("%c[ATA] Status after IDENTIFY for drive %d: %d\n", 255,255,0, drive, (int)status);
+    if (status == 0) {
+        printf("%c[ATA] No device present at drive %d\n", 255,0,0, drive);
+        return -1;
+    }
     int timeout = 1000000;
     while ((inportb(io_base + ATA_REG_STATUS) & ATA_SR_BSY) && --timeout);
     if (timeout == 0) { printf("%cIDENTIFY timeout (BSY)\n", 255,0,0); return -1; }

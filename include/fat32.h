@@ -50,18 +50,22 @@ struct fat32_dir_entry {
     uint32 FileSize;
 } __attribute__((packed));
 
-// Function prototypes
+// Public functions
 int fat32_read_bpb(void* disk_img, struct fat32_bpb* bpb);
 int fat32_list_root(void* disk_img, struct fat32_bpb* bpb);
 int fat32_read_file(void* disk_img, struct fat32_bpb* bpb, const char* filename, char* buf, int bufsize);
+uint32 fat32_next_cluster(void* disk_img, struct fat32_bpb* bpb, uint32 cluster);
 int fat32_list_dir(void* disk_img, struct fat32_bpb* bpb, uint32 start_cluster);
 int fat32_find_entry(void* disk_img, struct fat32_bpb* bpb, uint32 dir_cluster, const char* name, struct fat32_dir_entry* out_entry);
-uint32 fat32_next_cluster(void* disk_img, struct fat32_bpb* bpb, uint32 cluster);
 int fat32_write_file(void* disk_img, struct fat32_bpb* bpb, const char* filename, const char* buf, int bufsize);
 
-// Sector-buffered FAT32 functions for real disk access
-int fat32_read_bpb_sector(uint8 drive, struct fat32_bpb* bpb);
-int fat32_list_root_sector(uint8 drive, struct fat32_bpb* bpb);
-int fat32_read_file_sector(uint8 drive, struct fat32_bpb* bpb, const char* filename, char* buf, int bufsize);
+// Sector-based functions for real hardware
+int fat32_format_partition(uint8 drive, uint8 partition_num);
+uint32 fat32_get_partition_lba_start(uint8 drive);
+int fat32_read_bpb_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb);
+int fat32_list_root_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb);
+int fat32_read_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, const char* filename, char* buf, int bufsize);
+int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, const char* filename, const char* buf, int bufsize);
+uint32 fat32_next_cluster_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, uint32 cluster);
 
 #endif 

@@ -1,7 +1,10 @@
 #include "../../include/types.h"
 #include "../../include/util.h"
 #include "../../include/string.h"
+#include "../../include/vga.h"
 #include <stdint.h>
+
+volatile int g_user_interrupt = 0;
 
 uint32_t __stack_chk_fail(){
     return 0;
@@ -38,7 +41,7 @@ string int_to_ascii(int n, char str[]) {
 }
 string int_to_string(int n)
 {
-	string ch = malloc(50);
+	string ch = my_malloc(50);
 	int_to_ascii(n,ch);
 	int len = strlength(ch);
 	int i = 0;
@@ -202,8 +205,12 @@ uint8 check_string_numbers(string str) {
 	return res;
 }
 
-void * malloc(int nbytes)
+void * my_malloc(int nbytes)
 {
 	char variable[nbytes];
 	return &variable;
+}
+
+void putchar(char c) {
+    drawText(c, 255, 255, 255);
 }
