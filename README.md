@@ -14,7 +14,7 @@ Or, alternatively, flash the iso to a USB and run it on real hardware! I do it a
 
 ### Example of it running:
 
-![help command](image.png)
+![couple commands](image.png)
 This shows the 'help' command and the 'ver' command. If you've ever used a shell before, you'll feel right at home.
 
 ---
