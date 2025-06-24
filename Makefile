@@ -89,8 +89,7 @@ version:
 	./update_version.sh $(VERSION)
 	
 clear:
-	rm -f obj/*.o
-	rm -r -f tmp/boot/kernel.bin
+	rm -rf obj/*.o /tmp/boot/kernel.bin eynfs.img disk.img eynfs_format EYNOS.iso
 
 # Build the userland EYNFS format tool
 eynfs_format: eynfs_format.c include/eynfs.h
