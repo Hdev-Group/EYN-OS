@@ -1,4 +1,4 @@
-# EYN-OS
+# EYN-OS - DEVELOPMENT BUILD
 
 It's here. Well, a bit of it at least.
 
@@ -9,11 +9,17 @@ It's mostly unfinished, but there's a kernel and a basic shell. There's some pre
 ### To build:
 
 To build it, you just need to change to the EYN-OS directory and type 'make build'. Then, run the 'EYNOS.iso' produced with QEMU to boot the OS in a virtual machine.
+
+Run with:
+>qemu-system-i386 -cdrom EYNOS.iso -hda tmp/boot/disk.img -hdb tmp/boot/eynfs.img -boot d.
+Or with:
+>make run (rebuilds and runs)
+
 Or, alternatively, flash the iso to a USB and run it on real hardware! I do it a lot, so I know it works. (Only tested on an old Intel machine)
 
 ### Example of it running:
 
-![The 'help' command and the 'ver' command.](image.png)
+![couple commands](image.png)
 This shows the 'help' command and the 'ver' command. If you've ever used a shell before, you'll feel right at home.
 
 ---

@@ -1,4 +1,6 @@
 #include "types.h"
+#include "multiboot.h"
+
 #ifndef ISR_H
 #define ISR_H
 
@@ -35,7 +37,6 @@ void isr28();
 void isr29();
 void isr30();
 void isr31();
-
 
 extern string exception_messages[32];
 

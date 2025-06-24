@@ -1,7 +1,12 @@
 #include "../../include/isr.h"
-#include "../../include/tty.h"
+#include "../../include/vga.h"
 #include "../../include/idt.h"
-extern void isr_install() {
+#include "../../include/multiboot.h"
+
+extern multiboot_info_t *g_mbi;
+
+extern void isr_install() 
+{
     set_idt_gate(0, (uint32)isr0);
     set_idt_gate(1, (uint32)isr1);
     set_idt_gate(2, (uint32)isr2);

@@ -2,6 +2,6 @@
 #define SHELL_H
 #include "multiboot.h"
 
-void launch_shell(int n, multiboot_info_t *mbi);
+void launch_shell(int n);
 
 #endif
