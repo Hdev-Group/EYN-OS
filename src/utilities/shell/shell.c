@@ -7,6 +7,7 @@
 #include "../../../include/multiboot.h"
 #include "../../../include/vga.h"
 #include "../../../include/fat32.h"
+#include "../../../include/eynfs.h"
 #include <stdint.h>
 
 extern void* fat32_disk_img;
@@ -18,6 +19,304 @@ void fdisk_list();
 void fdisk_create_partition(uint32 start_lba, uint32 size, uint8 type);
 void fdisk_cmd_handler(string ch);
 void format_cmd_handler(string ch);
+
+// EYNFS integration: assume superblock at LBA 2048 on drive 0
+#define EYNFS_SUPERBLOCK_LBA 2048
+#define EYNFS_DRIVE 0
+
+// Global variable for current drive (default 0)
+static uint8_t g_current_drive = 0;
+
+// Command to switch current drive
+void drive_cmd(string ch);
+
+// Function prototypes for helpers used in this file
+void to_fat32_83(const char* input, char* output);
+int parse_redirection(const char* input, char* cmd, char* filename);
+void echo_to_buf(string ch, char* outbuf, int outbufsize);
+void calc_to_buf(string str, char* outbuf, int outbufsize);
+uint32 str_to_uint(const char* s);
+static int load_eynfs_superblock(eynfs_superblock_t *sb);
+
+// Unified ls command: detects EYNFS or FAT32 and lists files
+void ls(string input) {
+    uint8 disk = g_current_drive;
+    eynfs_superblock_t sb;
+    if (eynfs_read_superblock(disk, EYNFS_SUPERBLOCK_LBA, &sb) == 0 && sb.magic == EYNFS_MAGIC) {
+        eynfs_dir_entry_t entries[EYNFS_BLOCK_SIZE / sizeof(eynfs_dir_entry_t)];
+        int count = eynfs_read_dir_table(disk, sb.root_dir_block, entries, EYNFS_BLOCK_SIZE / sizeof(eynfs_dir_entry_t));
+        if (count < 0) {
+            printf("%cFailed to read EYNFS root directory\n", 255, 0, 0);
+            return;
+        }
+        printf("%cEYNFS root directory (drive %d):\n", 255, 255, 255, disk);
+        for (int i = 0; i < count; ++i) {
+            if (entries[i].name[0] == '\0') continue;
+            if (entries[i].type == EYNFS_TYPE_DIR)
+                printf("%c%s <DIR>\n", 255, 255, 255, entries[i].name);
+            else
+                printf("%c%s\n", 255, 255, 255, entries[i].name);
+        }
+        return;
+    }
+    uint32 partition_lba_start = fat32_get_partition_lba_start(disk);
+    struct fat32_bpb bpb;
+    if (fat32_read_bpb_sector(disk, partition_lba_start, &bpb) == 0) {
+        printf("%cFAT32 files on drive %d (Partition starts at LBA %d):\n\n", 255, 255, 255, disk, partition_lba_start);
+        uint32 byts_per_sec = bpb.BytsPerSec;
+        uint32 sec_per_clus = bpb.SecPerClus;
+        uint32 rsvd_sec_cnt = bpb.RsvdSecCnt;
+        uint32 num_fats = bpb.NumFATs;
+        uint32 fatsz = bpb.FATSz32;
+        uint32 root_clus = bpb.RootClus;
+        uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
+        uint32 cluster = root_clus;
+        uint8 sector[512];
+        uint8 fat[512];
+        extern volatile int g_user_interrupt;
+        g_user_interrupt = 0;
+        while (cluster < 0x0FFFFFF8) {
+            uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+            for (uint32 sec = 0; sec < sec_per_clus; sec++) {
+                if (ata_read_sector(disk, partition_lba_start + cluster_first_sec + sec, sector) != 0) {
+                    printf("%cFailed to read root directory sector %d\n", 255, 0, 0, sec);
+                    return;
+                }
+                struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
+                for (int i = 0; i < 16; i++) {
+                    if (entries[i].Name[0] == 0x00) return;
+                    if ((entries[i].Attr & 0x0F) == 0x0F) continue;
+                    if (entries[i].Name[0] == 0xE5) continue;
+                    char name[12];
+                    for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
+                    name[11] = '\0';
+                    if (entries[i].Attr & 0x10) {
+                        printf("%c%s <DIR>\n", 255, 255, 255, name);
+                    } else {
+                        printf("%c%s\n", 255, 255, 255, name);
+                    }
+                }
+            }
+            uint32 fat_sector = rsvd_sec_cnt + ((cluster * 4) / 512);
+            if (ata_read_sector(disk, fat_sector, fat) != 0) break;
+            uint32* fat32 = (uint32*)fat;
+            uint32 fat_index = (cluster % (512 / 4));
+            uint32 next_cluster = fat32[fat_index] & 0x0FFFFFFF;
+            cluster = next_cluster;
+        }
+        return;
+    }
+    printf("%cNo supported filesystem found on drive %d.\n", 255, 0, 0, disk);
+}
+
+// Unified cat command: detects EYNFS or FAT32 and displays file contents
+void cat(string ch) {
+    uint8 disk = g_current_drive;
+    // Parse filename
+    uint8 i = 0;
+    while (ch[i] && ch[i] != ' ') i++;
+    while (ch[i] && ch[i] == ' ') i++;
+    if (!ch[i]) {
+        printf("%cUsage: cat <filename>\n", 255, 255, 255);
+        return;
+    }
+    char arg[64];
+    uint8 j = 0;
+    while (ch[i] && ch[i] != ' ' && j < 63) arg[j++] = ch[i++];
+    arg[j] = '\0';
+    if (strlength(arg) < 1) {
+        printf("%cUsage: cat <filename>\n", 255, 255, 255);
+        return;
+    }
+    // Try EYNFS first
+    eynfs_superblock_t sb;
+    if (eynfs_read_superblock(disk, EYNFS_SUPERBLOCK_LBA, &sb) == 0 && sb.magic == EYNFS_MAGIC) {
+        eynfs_dir_entry_t entry;
+        uint32_t entry_idx;
+        if (eynfs_find_in_dir(disk, &sb, sb.root_dir_block, arg, &entry, &entry_idx) != 0 || entry.type != EYNFS_TYPE_FILE) {
+            printf("%cFile not found in EYNFS root directory.\n", 255, 0, 0);
+            return;
+        }
+        char buf[EYNFS_BLOCK_SIZE+1];
+        int n = eynfs_read_file(disk, &sb, &entry, buf, EYNFS_BLOCK_SIZE);
+        if (n < 0) {
+            printf("%cFailed to read file.\n", 255, 0, 0);
+            return;
+        }
+        buf[n] = '\0';
+        printf("%c%s\n", 255, 255, 255, buf);
+        return;
+    }
+    // Try FAT32
+    uint32 partition_lba_start = fat32_get_partition_lba_start(disk);
+    struct fat32_bpb bpb;
+    if (fat32_read_bpb_sector(disk, partition_lba_start, &bpb) == 0) {
+        char fatname[12];
+        to_fat32_83(arg, fatname);
+        // Find the file entry in the root directory (scan all clusters)
+        uint32 byts_per_sec = bpb.BytsPerSec;
+        uint32 sec_per_clus = bpb.SecPerClus;
+        uint32 rsvd_sec_cnt = bpb.RsvdSecCnt;
+        uint32 num_fats = bpb.NumFATs;
+        uint32 fatsz = bpb.FATSz32;
+        uint32 root_clus = bpb.RootClus;
+        uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
+        struct fat32_dir_entry entry;
+        int found = 0;
+        uint8 sector[512];
+        uint8 fat[512];
+        uint32 cluster = root_clus;
+        while (cluster < 0x0FFFFFF8 && !found) {
+            uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
+            for (uint32 sec = 0; sec < sec_per_clus; sec++) {
+                if (ata_read_sector(disk, partition_lba_start + cluster_first_sec + sec, sector) != 0) break;
+                struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
+                for (int i = 0; i < 16; i++) {
+                    if (entries[i].Name[0] == 0x00) break;
+                    if ((entries[i].Attr & 0x0F) == 0x0F) continue;
+                    if (entries[i].Name[0] == 0xE5) continue;
+                    int match = 1;
+                    for (int j = 0; j < 11; j++) {
+                        if (entries[i].Name[j] != fatname[j]) {
+                            match = 0;
+                            break;
+                        }
+                    }
+                    if (match) {
+                        entry = entries[i];
+                        found = 1;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            // Walk to next cluster in root dir
+            uint32 fat_sector = rsvd_sec_cnt + ((cluster * 4) / 512);
+            if (ata_read_sector(disk, fat_sector, fat) != 0) break;
+            uint32* fat32 = (uint32*)fat;
+            uint32 fat_index = (cluster % (512 / 4));
+            uint32 next_cluster = fat32[fat_index] & 0x0FFFFFFF;
+            cluster = next_cluster;
+        }
+        if (!found) {
+            printf("%cFile not found or error reading file.\n", 255, 0, 0);
+            return;
+        }
+        uint32 file_size = entry.FileSize;
+        uint32 first_clus = ((uint32)entry.FstClusHI << 16) | entry.FstClusLO;
+        if (first_clus < 2) {
+            printf("%cInvalid first cluster.\n", 255, 0, 0);
+            return;
+        }
+        // Walk the FAT chain and print each cluster, slow scroll with interrupt
+        uint32 cluster2 = first_clus;
+        uint32 bytes_read = 0;
+        extern volatile int g_user_interrupt;
+        g_user_interrupt = 0;
+        while (cluster2 < 0x0FFFFFF8 && bytes_read < file_size) {
+            uint32 data_sec = first_data_sec + ((cluster2 - 2) * sec_per_clus);
+            char* data_ptr = (char*)fat32_disk_img + data_sec * byts_per_sec;
+            for (uint32 s = 0; s < sec_per_clus && bytes_read < file_size; s++) {
+                char* sec_ptr = data_ptr + s * byts_per_sec;
+                uint32 to_copy = byts_per_sec;
+                if (bytes_read + to_copy > file_size) to_copy = file_size - bytes_read;
+                for (uint32 k = 0; k < to_copy; k++) {
+                    putchar(sec_ptr[k]);
+                    poll_keyboard_for_ctrl_c();
+                    if (sec_ptr[k] == '\n') {
+                        sleep(30); // ~1/5 second, adjust as needed
+                        if (g_user_interrupt) {
+                            printf("\n^C [Interrupted by user]\n", 255, 0, 0);
+                            g_user_interrupt = 0;
+                            return;
+                        }
+                    }
+                }
+                bytes_read += to_copy;
+            }
+            // Read the correct FAT sector for this cluster
+            cluster2 = fat32_next_cluster_sector(disk, partition_lba_start, &bpb, cluster2);
+        }
+        printf("\n");
+        return;
+    }
+    printf("%cNo supported filesystem found.\n", 255, 0, 0);
+}
+
+// Unified write command: detects EYNFS or FAT32 and writes file contents
+void write(string ch) {
+    uint8 disk = g_current_drive;
+    // Parse filename and data
+    uint8 i = 0;
+    while (ch[i] && ch[i] != ' ') i++;
+    while (ch[i] && ch[i] == ' ') i++;
+    if (!ch[i]) {
+        printf("%cUsage: write <filename> <data>\n", 255, 255, 255);
+        return;
+    }
+    char arg[64];
+    uint8 j = 0;
+    while (ch[i] && ch[i] != ' ' && j < 63) arg[j++] = ch[i++];
+    arg[j] = '\0';
+    if (strlength(arg) < 1) {
+        printf("%cUsage: write <filename> <data>\n", 255, 255, 255);
+        return;
+    }
+    while (ch[i] && ch[i] == ' ') i++;
+    if (!ch[i]) {
+        printf("%cUsage: write <filename> <data>\n", 255, 255, 255);
+        return;
+    }
+    // Try EYNFS first
+    eynfs_superblock_t sb;
+    if (load_eynfs_superblock(&sb) == 0 && sb.magic == EYNFS_MAGIC) {
+        char data[EYNFS_BLOCK_SIZE];
+        j = 0;
+        while (ch[i] && j < EYNFS_BLOCK_SIZE-1) data[j++] = ch[i++];
+        data[j] = '\0';
+        // Try to find the file
+        eynfs_dir_entry_t entry;
+        uint32_t entry_idx;
+        if (eynfs_find_in_dir(disk, &sb, sb.root_dir_block, arg, &entry, &entry_idx) != 0) {
+            // Not found, create it
+            if (eynfs_create_entry(disk, &sb, sb.root_dir_block, arg, EYNFS_TYPE_FILE) != 0) {
+                printf("%cFailed to create file.\n", 255, 0, 0);
+                return;
+            }
+            // Find again
+            if (eynfs_find_in_dir(disk, &sb, sb.root_dir_block, arg, &entry, &entry_idx) != 0) {
+                printf("%cFailed to find file after creation.\n", 255, 0, 0);
+                return;
+            }
+        }
+        int n = eynfs_write_file(disk, &sb, &entry, data, strlength(data), sb.root_dir_block, entry_idx);
+        if (n < 0) {
+            printf("%cFailed to write file.\n", 255, 0, 0);
+            return;
+        }
+        printf("%cFile written successfully.\n", 0, 255, 0);
+        return;
+    }
+    // Try FAT32
+    uint32 partition_lba_start = fat32_get_partition_lba_start(disk);
+    struct fat32_bpb bpb;
+    if (fat32_read_bpb_sector(disk, partition_lba_start, &bpb) == 0) {
+        char fatname[12];
+        to_fat32_83(arg, fatname);
+        char data[512];
+        j = 0;
+        while (ch[i] && j < 511) data[j++] = ch[i++];
+        data[j] = '\0';
+        int res = fat32_write_file_sector(disk, partition_lba_start, &bpb, fatname, data, j);
+        if (res < 0) {
+            printf("%cFailed to write file to disk. Error %d\n", 255, 0, 0, res);
+        } else {
+            printf("%cFile written successfully to disk.\n", 0, 255, 0);
+        }
+        return;
+    }
+    printf("%cNo supported filesystem found.\n", 255, 0, 0);
+}
 
 uint32_t __stack_chk_fail_local() // shutting the compiler up
 {
@@ -59,7 +358,7 @@ void ver()
     printf("%c#######     ##     ##  ##  ##  #####  ##    ##   #####\n");
     printf("%c###         ##     ##    ####         ##    ##       ##\n");
     printf("%c#######     ##     ##      ##          ######    #####\n");
-	printf("%c(ver. 0.09)\n", 200, 200, 200);
+	printf("%c(ver. 0.10)\n", 200, 200, 200);
 }
 
 void help()
@@ -71,16 +370,14 @@ void help()
 	printf("%cver         : Shows the current system version\n");
 	printf("%cspam        : Spam 'EYN-OS' to the shell (100 times)\n");
 	printf("%ccalc <expr> : 32-bit fixed-point calculator (if no expr, prints calc help)\n");
-	printf("%cdraw <expr> : Draw an example rectangle (if no expr, prints draw help)\n");
-	printf("%clsram       : List files in the RAM FAT32 disk image\n");
-	printf("%ccatram <f>  : Display contents of a file from the RAM FAT32 disk image\n");
-	printf("%cwriteram <> : Write to a temporary file (in RAM)\n");
+	printf("%cdraw <>     : Draw an example rectangle (if no expr, prints draw help)\n");
 	printf("%clsata       : List detected ATA drives\n");
 	printf("%cfdisk       : List partition table (use 'fdisk create' to create partitions)\n");
-	printf("%cformat <n>  : Format partition n (1-4) as FAT32 filesystem\n");
-	printf("%clsfat       : List files on the real hard drive (partition-aware)\n");
-	printf("%ccatfat <f>  : Display contents of a file from the real hard drive\n");
-	printf("%cwritefat <f> <data> : Write data to a file on the real hard drive\n");
+	printf("%cformat <>   : Format partition n (1-4) as FAT32 or EYNFS\n");
+	printf("%ccat <file>  : Display contents of a file\n");
+	printf("%cls          : List files in the root directory (of drive selected)\n");
+	printf("%cwrite <>    : Write to a file in EYNFS root\n");
+    printf("%cdrive <n>   : Change between different drives (from lsata)\n");
 }
 
 void calc(string str) 
@@ -521,316 +818,22 @@ void writeram(string ch)
 }
 
 void lsata() {
-    for (int d = 0; d < 4; d++) {
+    for (int d = 0; d < 8; d++) { // Show up to 8 possible drives
         uint16 id[256];
         int res = ata_identify(d, id);
         if (res == 0) {
-            // Model string is words 27-46 (40 chars)
             char model[41];
             for (int i = 0; i < 20; i++) {
                 model[i*2] = (id[27+i] >> 8) & 0xFF;
                 model[i*2+1] = id[27+i] & 0xFF;
             }
             model[40] = '\0';
-            // Size in sectors: words 60-61 (little endian)
             uint32 sectors = id[60] | (id[61] << 16);
-            uint32 mb = (sectors / 2048); // 512 bytes/sector
+            uint32 mb = (sectors / 2048);
             printf("%cDrive %d: %s (%d MB)\n", 255, 255, 255, d, model, mb);
         } else {
-            printf("%cDrive %d: not present\n", 255, 255, 255, d);
+            printf("%cDrive %d: not present or not responding\n", 255, 255, 255, d);
         }
-    }
-}
-
-void catfat(string ch) 
-{
-    uint32 partition_lba_start = fat32_get_partition_lba_start(0);
-    struct fat32_bpb bpb;
-    if (fat32_read_bpb_sector(0, partition_lba_start, &bpb) != 0) 
-    {
-        printf("%cFailed to read FAT32 BPB from drive 0\n", 255, 0, 0);
-        return;
-    }
-
-    // get filename argument (e.g. test.txt)
-    uint8 i = 0;
-    while (ch[i] && ch[i] != ' ') i++;
-    while (ch[i] && ch[i] == ' ') i++;
-    if (!ch[i]) 
-    {
-        printf("%cUsage: catfat <filename>\nExample: catfat test.txt\n", 255, 255, 255);
-        return;
-    }
-    char arg[64];
-    uint8 j = 0;
-    while (ch[i] && ch[i] != ' ' && j < 63) {
-        arg[j++] = ch[i++];
-    }
-    arg[j] = '\0';
-    if (strlength(arg) < 1) 
-    {
-        printf("%cUsage: catfat <filename>\nExample: catfat test.txt\n", 255, 255, 255);
-        return;
-    }
-
-    char fatname[12];
-    to_fat32_83(arg, fatname);
-
-    // Find the file entry in the root directory (scan all clusters)
-    uint32 byts_per_sec = bpb.BytsPerSec;
-    uint32 sec_per_clus = bpb.SecPerClus;
-    uint32 rsvd_sec_cnt = bpb.RsvdSecCnt;
-    uint32 num_fats = bpb.NumFATs;
-    uint32 fatsz = bpb.FATSz32;
-    uint32 root_clus = bpb.RootClus;
-    uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-
-    struct fat32_dir_entry entry;
-    int found = 0;
-    uint8 sector[512];
-    uint8 fat[512];
-    uint32 cluster = root_clus;
-    while (cluster < 0x0FFFFFF8 && !found) {
-        uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
-        for (uint32 sec = 0; sec < sec_per_clus; sec++) {
-            if (ata_read_sector(0, partition_lba_start + cluster_first_sec + sec, sector) != 0) break;
-            struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
-            for (int i = 0; i < 16; i++) {
-                if (entries[i].Name[0] == 0x00) break;
-                if ((entries[i].Attr & 0x0F) == 0x0F) continue;
-                if (entries[i].Name[0] == 0xE5) continue;
-                int match = 1;
-                for (int j = 0; j < 11; j++) {
-                    if (entries[i].Name[j] != fatname[j]) {
-                        match = 0;
-                        break;
-                    }
-                }
-                if (match) {
-                    entry = entries[i];
-                    found = 1;
-                    break;
-                }
-            }
-            if (found) break;
-        }
-        // Walk to next cluster in root dir
-        uint32 fat_sector = rsvd_sec_cnt + ((cluster * 4) / 512);
-        if (ata_read_sector(0, fat_sector, fat) != 0) break;
-        uint32* fat32 = (uint32*)fat;
-        uint32 fat_index = (cluster % (512 / 4));
-        uint32 next_cluster = fat32[fat_index] & 0x0FFFFFFF;
-        cluster = next_cluster;
-    }
-    if (!found) {
-        printf("%cFile not found or error reading file.\n", 255, 0, 0);
-        return;
-    }
-
-    uint32 file_size = entry.FileSize;
-    uint32 first_clus = ((uint32)entry.FstClusHI << 16) | entry.FstClusLO;
-    if (first_clus < 2) {
-        printf("%cInvalid first cluster.\n", 255, 0, 0);
-        return;
-    }
-
-    // Walk the FAT chain and print each cluster, slow scroll with interrupt
-    uint32 cluster2 = first_clus;
-    uint32 bytes_read = 0;
-    uint8 data_sector[512];
-    extern volatile int g_user_interrupt;
-    while (cluster2 < 0x0FFFFFF8 && bytes_read < file_size) {
-        uint32 data_sec = first_data_sec + ((cluster2 - 2) * sec_per_clus);
-        for (uint32 s = 0; s < sec_per_clus && bytes_read < file_size; s++) {
-            if (ata_read_sector(0, partition_lba_start + data_sec + s, data_sector) != 0) {
-                printf("%cError reading file data.\n", 255, 0, 0);
-                return;
-            }
-            uint32 to_copy = byts_per_sec;
-            if (bytes_read + to_copy > file_size) to_copy = file_size - bytes_read;
-            for (uint32 k = 0; k < to_copy; k++) {
-                putchar(data_sector[k]);
-                poll_keyboard_for_ctrl_c();
-                if (data_sector[k] == '\n') {
-                    sleep(30); // ~1/5 second, adjust as needed
-                    if (g_user_interrupt) {
-                        printf("\n^C [Interrupted by user]\n", 255, 0, 0);
-                        g_user_interrupt = 0;
-                        return;
-                    }
-                }
-            }
-            bytes_read += to_copy;
-        }
-        // Read the correct FAT sector for this cluster
-        cluster2 = fat32_next_cluster_sector(0, partition_lba_start, &bpb, cluster2);
-    }
-    printf("\n");
-}
-
-// Helper: check for '>' and split command and filename
-int parse_redirection(const char* input, char* cmd, char* filename) {
-    int i = 0, j = 0, found = 0;
-    while (input[i]) {
-        if (input[i] == '>') {
-            found = 1;
-            break;
-        }
-        cmd[j++] = input[i++];
-    }
-    cmd[j] = '\0';
-    if (!found) return 0;
-    i++; // skip '>'
-    while (input[i] == ' ') i++;
-    j = 0;
-    while (input[i] && input[i] != ' ' && j < 63) filename[j++] = input[i++];
-    filename[j] = '\0';
-    return 1;
-}
-
-// Modified echo to support output to buffer
-void echo_to_buf(string ch, char* outbuf, int outbufsize) {
-    uint8 i = 0;
-    while (ch[i] && ch[i] != ' ') i++;
-    while (ch[i] && ch[i] == ' ') i++;
-    if (!ch[i]) {
-        if (outbuf) outbuf[0] = '\0';
-        else printf("%c\n", 255, 255, 255);
-        return;
-    }
-    if (outbuf) {
-        int j = 0;
-        while (ch[i] && j < outbufsize - 2) outbuf[j++] = ch[i++];
-        outbuf[j++] = '\n';
-        outbuf[j] = '\0';
-    } else {
-        printf("%c%s\n", 255, 255, 255, &ch[i]);
-    }
-}
-
-// Helper: parse unsigned integer from string
-uint32 str_to_uint(const char* s) {
-    uint32 n = 0;
-    while (*s >= '0' && *s <= '9') {
-        n = n * 10 + (*s - '0');
-        s++;
-    }
-    return n;
-}
-
-// Modified calc to support output to buffer
-void calc_to_buf(string str, char* outbuf, int outbufsize) {
-    uint8 i = 0;
-    while (str[i] && str[i] != ' ') i++;
-    while (str[i] && str[i] == ' ') i++;
-    if (!str[i]) {
-        // Manual formatting for usage message
-        char* usage = "Usage: calc <expression>\nExample: calc 2.5+3.7\n";
-        int j = 0;
-        while (usage[j] && j < outbufsize - 1) {
-            outbuf[j] = usage[j];
-            j++;
-        }
-        outbuf[j] = '\0';
-        return;
-    }
-    char expression[200];
-    uint8 j = 0;
-    while (str[i] && j < 199) {
-        expression[j++] = str[i++];
-    }
-    expression[j] = '\0';
-    int32_t result = math_get_current_equation(expression);
-    int32_t int_part = result / FIXED_POINT_FACTOR;
-    int32_t decimal_part = result % FIXED_POINT_FACTOR;
-    if (decimal_part < 0) decimal_part = -decimal_part;
-    j = 0;
-    char* prefix = "Result: ";
-    int k = 0;
-    while (prefix[k] && j < outbufsize - 1) {
-        outbuf[j++] = prefix[k++];
-    }
-    // Convert int_part to string
-    char intbuf[16];
-    int_to_ascii(int_part, intbuf);
-    k = 0;
-    while (intbuf[k] && j < outbufsize - 1) {
-        outbuf[j++] = intbuf[k++];
-    }
-    if (decimal_part == 0) {
-        if (j < outbufsize - 1) outbuf[j++] = '\n';
-        outbuf[j] = '\0';
-    } else {
-        if (j < outbufsize - 1) outbuf[j++] = '.';
-        // Convert decimal_part to 3 digits
-        int d1 = (decimal_part / 100) % 10;
-        int d2 = (decimal_part / 10) % 10;
-        int d3 = decimal_part % 10;
-        if (j < outbufsize - 1) outbuf[j++] = '0' + d1;
-        if (j < outbufsize - 1) outbuf[j++] = '0' + d2;
-        if (j < outbufsize - 1) outbuf[j++] = '0' + d3;
-        if (j < outbufsize - 1) outbuf[j++] = '\n';
-        outbuf[j] = '\0';
-    }
-}
-
-void lsfat(string input) {
-    uint32 partition_lba_start = fat32_get_partition_lba_start(0);
-    if (partition_lba_start == 0) {
-        printf("%cNo FAT32 partition found on drive 0. Disk may be unpartitioned or have an unsupported partition scheme.\n", 255, 165, 0);
-    }
-
-    struct fat32_bpb bpb;
-    if (fat32_read_bpb_sector(0, partition_lba_start, &bpb) != 0) {
-        printf("%cFailed to read FAT32 BPB from drive 0\n", 255, 0, 0);
-        return;
-    }
-    printf("%cFAT32 files on drive 0 (Partition starts at LBA %d):\n\n", 255, 255, 255, partition_lba_start);
-
-    // Custom implementation with scrolling and Ctrl+C
-    uint32 byts_per_sec = bpb.BytsPerSec;
-    uint32 sec_per_clus = bpb.SecPerClus;
-    uint32 rsvd_sec_cnt = bpb.RsvdSecCnt;
-    uint32 num_fats = bpb.NumFATs;
-    uint32 fatsz = bpb.FATSz32;
-    uint32 root_clus = bpb.RootClus;
-    uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-    uint32 cluster = root_clus;
-    uint8 sector[512];
-    uint8 fat[512];
-    extern volatile int g_user_interrupt;
-    g_user_interrupt = 0;
-    while (cluster < 0x0FFFFFF8) {
-        uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
-        for (uint32 sec = 0; sec < sec_per_clus; sec++) {
-            if (ata_read_sector(0, partition_lba_start + cluster_first_sec + sec, sector) != 0) {
-                printf("%cFailed to read root directory sector %d\n", 255, 0, 0, sec);
-                return;
-            }
-            struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
-            for (int i = 0; i < 16; i++) {
-                if (entries[i].Name[0] == 0x00) return;
-                if ((entries[i].Attr & 0x0F) == 0x0F) continue;
-                if (entries[i].Name[0] == 0xE5) continue;
-                char name[12];
-                for (int j = 0; j < 11; j++) name[j] = entries[i].Name[j];
-                name[11] = '\0';
-                if (entries[i].Attr & 0x10) {
-                    printf("%c%s <DIR>\n", 255, 255, 255, name);
-                } else {
-                    printf("%c%s\n", 255, 255, 255, name);
-                }
-                poll_keyboard_for_ctrl_c();
-                sleep(30); // ~1/5 second
-                if (g_user_interrupt) {
-                    printf("\n^C [Interrupted by user]\n", 255, 0, 0);
-                    g_user_interrupt = 0;
-                    return;
-                }
-            }
-        }
-        // Walk to next cluster in root dir
-        cluster = fat32_next_cluster_sector(0, partition_lba_start, &bpb, cluster);
     }
 }
 
@@ -917,17 +920,9 @@ void launch_shell(int n)
 			{
 				lsata();
 			}
-			else if(cmdEql(ch,"lsfat"))
+			else if(cmdEql(ch,"cat"))
 			{
-				lsfat(ch);
-			}
-			else if(cmdEql(ch,"catfat"))
-			{
-				catfat(ch);
-			}
-			else if(cmdEql(ch,"writefat"))
-			{
-				writefat(ch);
+				cat(ch);
 			}
 			else if(cmdEql(ch,"fdisk"))
 			{
@@ -937,11 +932,20 @@ void launch_shell(int n)
 			{
 				format_cmd_handler(ch);
 			}
+			else if(cmdEql(ch,"ls"))
+			{
+				ls(ch);
+			}
+			else if(cmdEql(ch,"write"))
+			{
+				write(ch);
+			}
 			else if(cmdEql(ch,"exit"))
 			{
 				printf("%c\nShutting down...\n", 255, 0, 0);  // red
 				Shutdown();
 			}
+			else if(cmdEql(ch,"drive")) { drive_cmd(ch); }
 			else
 			{
 				// check if input is empty or space (THIS CODE IS HORRIBLE IM SORRY)
@@ -1093,20 +1097,144 @@ void fdisk_create_partition(uint32 start_lba, uint32 size, uint8 type) {
     printf("%cPartition created: entry %d, type=%d, start=%d, size=%d\n", 0,255,0, free_idx+1, type, start_lba, size);
 }
 
+// Helper function to format a partition as EYNFS
+int eynfs_format_partition(uint8 drive, uint8 part_num) {
+    printf("%cStarting EYNFS format for partition %d...\n", 255, 255, 0, part_num);
+    
+    // Read MBR to get partition info
+    uint8 mbr[512];
+    if (ata_read_sector(drive, 0, mbr) != 0) {
+        printf("%cFailed to read MBR\n", 255, 0, 0);
+        return -1;
+    }
+    
+    uint32 start_lba = 0;
+    uint32 size = 0;
+    
+    // Check for MBR signature
+    if (mbr[510] == 0x55 && mbr[511] == 0xAA) {
+        // Valid MBR exists, try to read partition info
+        uint8* entry = mbr + 0x1BE + (part_num - 1) * 16;
+        start_lba = entry[8] | (entry[9]<<8) | (entry[10]<<16) | (entry[11]<<24);
+        size = entry[12] | (entry[13]<<8) | (entry[14]<<16) | (entry[15]<<24);
+        
+        if (start_lba == 0 || size == 0) {
+            start_lba = 0;
+            size = 1024000; // Assume 500MB disk (1024000 sectors)
+        }
+    } else {
+        // No valid MBR, treat as superfloppy
+        start_lba = 0;
+        size = 1024000; // Assume 500MB disk (1024000 sectors)
+    }
+    
+    printf("%cUsing start_lba=%d, size=%d\n", 255, 255, 0, start_lba, size);
+    
+    // ERASE THE DISK: Zero out the first 2048 sectors to remove old FAT32 data
+    printf("%cErasing disk...\n", 255, 255, 0);
+    uint8 zero_sector[EYNFS_BLOCK_SIZE] = {0};
+    for (uint32 i = 0; i < 2048; i++) {
+        int write_result = ata_write_sector(drive, start_lba + i, zero_sector);
+        if (write_result != 0) {
+            printf("%cFailed to erase sector %d\n", 255, 0, 0, i);
+            return -7;
+        }
+        // Add a small delay every 10 sectors to prevent overwhelming the disk controller
+        if (i % 10 == 0) {
+            sleep(1); // Small delay
+        }
+    }
+    
+    printf("%cWriting EYNFS structures...\n", 255, 255, 0);
+    
+    // EYNFS layout: superblock at start_lba + 2048
+    uint32 eynfs_superblock_lba = start_lba + 2048;
+    uint32 eynfs_bitmap_lba = start_lba + 2049;
+    uint32 eynfs_nametable_lba = start_lba + 2050;
+    uint32 eynfs_rootdir_lba = start_lba + 2051;
+    
+    // Write superblock
+    eynfs_superblock_t sb = {0};
+    sb.magic = EYNFS_MAGIC;
+    sb.version = EYNFS_VERSION;
+    sb.block_size = EYNFS_BLOCK_SIZE;
+    sb.total_blocks = size;
+    sb.root_dir_block = eynfs_rootdir_lba;
+    sb.free_block_map = eynfs_bitmap_lba;
+    sb.name_table_block = eynfs_nametable_lba;
+    if (eynfs_write_superblock(drive, eynfs_superblock_lba, &sb) != 0) {
+        printf("%cFailed to write superblock\n", 255, 0, 0);
+        return -3;
+    }
+    
+    // Write zeroed free block bitmap
+    uint8 bitmap[EYNFS_BLOCK_SIZE] = {0};
+    // Mark reserved blocks as used (superblock, bitmap, nametable, rootdir)
+    for (int i = 0; i < 4; i++) bitmap[i/8] |= (1 << (i%8));
+    if (ata_write_sector(drive, eynfs_bitmap_lba, bitmap) != 0) {
+        printf("%cFailed to write bitmap\n", 255, 0, 0);
+        return -4;
+    }
+    
+    // Write empty name table
+    uint8 name_table[EYNFS_BLOCK_SIZE] = {0};
+    if (ata_write_sector(drive, eynfs_nametable_lba, name_table) != 0) {
+        printf("%cFailed to write name table\n", 255, 0, 0);
+        return -5;
+    }
+    
+    // Write empty root directory block
+    uint8 root_dir[EYNFS_BLOCK_SIZE] = {0};
+    if (ata_write_sector(drive, eynfs_rootdir_lba, root_dir) != 0) {
+        printf("%cFailed to write root directory\n", 255, 0, 0);
+        return -6;
+    }
+    
+    printf("%cEYNFS format completed successfully\n", 0, 255, 0);
+    return 0;
+}
+
 void format_cmd_handler(string ch) {
     uint8 i = 0;
     while (ch[i] && ch[i] != ' ') i++;
     while (ch[i] && ch[i] == ' ') i++;
 
     if (!ch[i]) {
-        printf("%cUsage: format <partition_num (1-4)>\n", 255, 255, 255);
+        printf("%cUsage: format <partition_num (1-4)> [filesystem_type]\n", 255, 255, 255);
+        printf("%cFilesystem types: fat32, eynfs\n", 255, 255, 255);
+        printf("%cExample: format 1 fat32\n", 255, 255, 255);
+        printf("%cExample: format 2 eynfs\n", 255, 255, 255);
         return;
     }
 
-    int part_num = str_to_int(&ch[i]);
+    // Parse partition number (first token)
+    char part_str[16];
+    uint8 j = 0;
+    while (ch[i] && ch[i] != ' ' && j < 15) part_str[j++] = ch[i++];
+    part_str[j] = '\0';
+    
+    uint8 part_num = (uint8)str_to_int(part_str);
     if (part_num < 1 || part_num > 4) {
         printf("%cInvalid partition number. Must be 1-4.\n", 255, 0, 0);
         return;
+    }
+
+    // Parse filesystem type (second token)
+    while (ch[i] && ch[i] == ' ') i++;
+    
+    int format_eynfs = 0;
+    if (ch[i]) {
+        char fs_type[16];
+        j = 0;
+        while (ch[i] && ch[i] != ' ' && j < 15) fs_type[j++] = ch[i++];
+        fs_type[j] = '\0';
+        if (strEql(fs_type, "eynfs")) {
+            format_eynfs = 1;
+        } else if (!strEql(fs_type, "fat32")) {
+            printf("%cUnknown filesystem type: %s\n", 255, 0, 0, fs_type);
+            printf("%cSupported types: fat32, eynfs\n", 255, 255, 255);
+            return;
+        }
     }
 
     printf("%cThis will erase all data on partition %d. Are you sure? (y/n): ", 255, 165, 0, part_num);
@@ -1115,10 +1243,17 @@ void format_cmd_handler(string ch) {
     printf("\n");
 
     if (strEql(confirm, "y") || strEql(confirm, "Y")) {
-        printf("%cFormatting partition %d...\n", 255, 255, 255, part_num);
-        int res = fat32_format_partition(0, part_num);
+        printf("%cFormatting partition %d as %s...\n", 255, 255, 255, part_num, format_eynfs ? "EYNFS" : "FAT32");
+        
+        int res;
+        if (format_eynfs) {
+            res = eynfs_format_partition(0, part_num);
+        } else {
+            res = fat32_format_partition(0, part_num);
+        }
+        
         if (res == 0) {
-            printf("%cPartition %d formatted successfully.\n", 0, 255, 0, part_num);
+            printf("%cPartition %d formatted successfully as %s.\n", 0, 255, 0, part_num, format_eynfs ? "EYNFS" : "FAT32");
         } else {
             printf("%cFailed to format partition %d. Error %d\n", 255, 0, 0, part_num, res);
         }
@@ -1180,5 +1315,28 @@ void fdisk_cmd_handler(string ch) {
         fdisk_create_partition(start_lba, size, type);
     } else {
         printf("%cUnknown fdisk subcommand: %s\n", 255, 0, 0, arg);
+    }
+}
+
+// Add the missing static helper for EYNFS superblock
+static int load_eynfs_superblock(eynfs_superblock_t *sb) {
+    return eynfs_read_superblock(g_current_drive, EYNFS_SUPERBLOCK_LBA, sb);
+}
+
+// Add the drive_cmd definition if missing
+void drive_cmd(string ch) {
+    uint8 i = 0;
+    while (ch[i] && ch[i] != ' ') i++;
+    while (ch[i] && ch[i] == ' ') i++;
+    if (ch[i] >= '0' && ch[i] <= '9') {
+        uint32_t drive = 0;
+        while (ch[i] >= '0' && ch[i] <= '9') {
+            drive = drive * 10 + (ch[i] - '0');
+            i++;
+        }
+        g_current_drive = (uint8_t)drive;
+        printf("%cSwitched to drive %d\n", 0, 255, 0, g_current_drive);
+    } else {
+        printf("%cUsage: drive <n>\n", 255, 255, 255);
     }
 }

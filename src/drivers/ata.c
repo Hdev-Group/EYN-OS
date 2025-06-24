@@ -107,16 +107,37 @@ int ata_write_sector(uint8 drive, uint32 lba, const uint8* buf) {
     outportb(io_base + ATA_REG_LBA1, (uint8)((lba >> 8) & 0xFF));
     outportb(io_base + ATA_REG_LBA2, (uint8)((lba >> 16) & 0xFF));
     outportb(io_base + ATA_REG_COMMAND, ATA_CMD_WRITE_PIO);
+
+    // Wait for BSY to clear and DRQ to set
     int timeout = 1000000;
     while ((inportb(io_base + ATA_REG_STATUS) & ATA_SR_BSY) && --timeout);
     if (timeout == 0) { printf("%cWRITE timeout (BSY)\n", 255,0,0); return -1; }
     timeout = 1000000;
     while (!(inportb(io_base + ATA_REG_STATUS) & ATA_SR_DRQ) && --timeout);
     if (timeout == 0) { printf("%cWRITE timeout (DRQ)\n", 255,0,0); return -1; }
+
+    // Write the data
     for (int i = 0; i < 256; i++) {
         uint16 data = buf[i*2] | (buf[i*2+1] << 8);
         outw(io_base + ATA_REG_DATA, data);
     }
+
     ata_io_wait(io_base);
+
+    // Wait for BSY to clear and DRDY to set after writing
+    timeout = 1000000;
+    while ((inportb(io_base + ATA_REG_STATUS) & ATA_SR_BSY) && --timeout);
+    if (timeout == 0) { printf("%cWRITE post timeout (BSY)\n", 255,0,0); return -1; }
+    timeout = 1000000;
+    while (!(inportb(io_base + ATA_REG_STATUS) & ATA_SR_DRDY) && --timeout);
+    if (timeout == 0) { printf("%cWRITE post timeout (DRDY)\n", 255,0,0); return -1; }
+
+    // Check for errors
+    uint8 status = inportb(io_base + ATA_REG_STATUS);
+    if (status & (ATA_SR_ERR | ATA_SR_DF)) {
+        printf("%cWRITE error: status=0x%X\n", 255,0,0, status);
+        return -1;
+    }
+
     return 0;
 } 

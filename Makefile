@@ -7,7 +7,7 @@ LDFLAGS = -m elf_i386 -T src/boot/link.ld
 EMULATOR = qemu-system-i386
 EMULATOR_FLAGS = -kernel
 
-OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o obj/fat32.o obj/ata.o
+OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o obj/fat32.o obj/ata.o obj/eynfs.o
 OUTPUT = tmp/boot/kernel.bin
 
 all:$(OBJS)
@@ -55,9 +55,12 @@ obj/fat32.o:src/drivers/fat32.c
 obj/ata.o:src/drivers/ata.c
 	$(COMPILER) $(CFLAGS) src/drivers/ata.c -o obj/ata.o
 
+obj/eynfs.o:src/drivers/eynfs.c
+	$(COMPILER) $(CFLAGS) src/drivers/eynfs.c -o obj/eynfs.o
+
 fat32img:
 	rm -f disk.img
-	dd if=/dev/zero of=disk.img bs=1M count=4
+	dd if=/dev/zero of=disk.img bs=1M count=5
 	mkfs.fat -F 32 disk.img
 	# Copy all source and header files to the root of the disk image
 	mcopy -i disk.img src/drivers/*.c ::/
@@ -71,10 +74,8 @@ fat32img:
 	mcopy -i disk.img include/*.h ::/
 	mcopy -i disk.img README.md ::/
 	mcopy -i disk.img LICENSE ::/
-	mkdir -p tmp/boot/
-	mv disk.img tmp/boot/
 
-build: all fat32img
+build: all fat32img eynfsimg
 	grub-mkrescue -o EYNOS.iso tmp/
 
 version:
@@ -90,4 +91,21 @@ version:
 clear:
 	rm -f obj/*.o
 	rm -r -f tmp/boot/kernel.bin
+
+# Build the userland EYNFS format tool
+eynfs_format: eynfs_format.c include/eynfs.h
+	$(COMPILER) -o eynfs_format eynfs_format.c
+
+# Create and format a 5MB EYNFS disk image
+eynfsimg: eynfs_format
+	rm -f eynfs.img
+	dd if=/dev/zero of=eynfs.img bs=1M count=5
+	$(COMPILER) -o eynfs_format eynfs_format.c
+	./eynfs_format eynfs.img
+
+run: build
+	qemu-system-i386 -cdrom EYNOS.iso \
+	  -hda disk.img \
+	  -hdb eynfs.img \
+	  -boot d
 	

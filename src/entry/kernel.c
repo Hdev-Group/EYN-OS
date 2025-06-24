@@ -20,7 +20,7 @@ int kmain(uint32 magic, multiboot_info_t *mbi)
 
 	isr_install();
 	clearScreen();
-	printf("EYN-OS v0.09\nType 'help' for a list of commands.\n\n");
+	printf("EYN-OS v0.10\nType 'help' for a list of commands.\n\n");
 	launch_shell(0);
 	while(1)
 	{
