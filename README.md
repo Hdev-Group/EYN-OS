@@ -11,7 +11,8 @@ It's mostly unfinished, but there's a kernel and a basic shell. There's some pre
 To build it, you just need to change to the EYN-OS directory and type 'make build'. Then, run the 'EYNOS.iso' produced with QEMU to boot the OS in a virtual machine.
 
 Run with:
->qemu-system-i386 -cdrom EYNOS.iso -hda tmp/boot/disk.img -hdb tmp/boot/eynfs.img -boot d.
+>qemu-system-i386 -cdrom EYNOS.iso -hda tmp/boot/disk.img -hdb tmp/boot/eynfs.img -boot d
+
 Or with:
 >make run (rebuilds and runs)
 
