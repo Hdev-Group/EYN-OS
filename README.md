@@ -14,7 +14,7 @@ Run with:
 >qemu-system-i386 -cdrom EYNOS.iso -hda tmp/boot/disk.img -hdb tmp/boot/eynfs.img -boot d
 
 Or with:
->make run (rebuilds and runs)
+>make run
 
 Or, alternatively, flash the iso to a USB and run it on real hardware! I do it a lot, so I know it works. (Only tested on an old Intel machine)
 
