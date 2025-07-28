@@ -390,7 +390,6 @@ int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat3
         uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
         for (uint32 sec = 0; sec < sec_per_clus; sec++) {
             if (ata_read_sector(drive, partition_lba_start + cluster_first_sec + sec, sector) != 0) return -10;
-            sleep(1);
             struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
             for (int i = 0; i < (byts_per_sec / sizeof(struct fat32_dir_entry)); i++) {
                 if (entries[i].Name[0] == 0x00 || entries[i].Name[0] == 0xE5) {
@@ -420,7 +419,6 @@ int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat3
     for(uint32 i = 2; i < total_clusters + 2; i++) {
         uint32 current_fat_sec = rsvd_sec_cnt + (i * 4 / byts_per_sec);
         if (ata_read_sector(drive, partition_lba_start + current_fat_sec, sector) != 0) return -5;
-        sleep(1);
         uint32* fat = (uint32*)sector;
         uint32 fat_idx = i % (byts_per_sec/4);
         if((fat[fat_idx] & 0x0FFFFFFF) == 0) {
@@ -441,21 +439,17 @@ int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat3
     memory_copy((char*)buf, (char*)sector, write_bytes);
     if(write_bytes < 512) memory_set(sector + write_bytes, 0, 512 - write_bytes);
     if(ata_write_sector(drive, partition_lba_start + data_sec, sector) != 0) return -6;
-    sleep(1);
 
     // Update FAT
     uint32 fat_sector_for_free_clus = rsvd_sec_cnt + (free_clus * 4 / byts_per_sec);
     if (ata_read_sector(drive, partition_lba_start + fat_sector_for_free_clus, sector) != 0) return -7;
-    sleep(1);
     uint32* fat = (uint32*)sector;
     uint32 fat_idx = free_clus % (byts_per_sec / 4);
     fat[fat_idx] = 0x0FFFFFF8; // EOC
     if (ata_write_sector(drive, partition_lba_start + fat_sector_for_free_clus, sector) != 0) return -8;
-    sleep(1);
 
     // Update directory entry
     if(ata_read_sector(drive, free_entry_sec_in_disk, sector) != 0) return -9;
-    sleep(1);
     struct fat32_dir_entry* entries = (struct fat32_dir_entry*)sector;
     struct fat32_dir_entry* entry = &entries[free_entry_idx];
     for (int j=0; j<11; j++) entry->Name[j] = filename[j];
@@ -470,7 +464,6 @@ int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat3
     entry->FileSize = write_bytes;
 
     if (ata_write_sector(drive, free_entry_sec_in_disk, sector) != 0) return -9;
-    sleep(1);
 
     return 0;
 }
@@ -574,9 +567,7 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     sector[510] = 0x55; sector[511] = 0xAA;
 
     if (ata_write_sector(drive, start_lba, sector) != 0) return -5;
-    sleep(1);
     if (ata_write_sector(drive, start_lba + bpb.BkBootSec, sector) != 0) return -6;
-    sleep(1);
 
     memory_set(sector, 0, 512);
     sector[0] = 0x52; sector[1] = 0x52; sector[2] = 0x61; sector[3] = 0x41;
@@ -586,14 +577,12 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     *((uint32*)(sector + 492)) = 3; // Next free
     sector[510] = 0x55; sector[511] = 0xAA;
     if (ata_write_sector(drive, start_lba + bpb.FSInfo, sector) != 0) return -7;
-    sleep(1);
 
     memory_set(sector, 0, 512);
     for (uint32 f = 0; f < bpb.NumFATs; f++) {
         uint32 fat_start = start_lba + bpb.RsvdSecCnt + (f * bpb.FATSz32);
         for (uint32 i = 0; i < bpb.FATSz32; i++) {
             if (ata_write_sector(drive, fat_start + i, sector) != 0) return -8;
-            sleep(1);
         }
     }
     
@@ -605,7 +594,6 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     for (uint32 f = 0; f < bpb.NumFATs; f++) {
         uint32 fat_start = start_lba + bpb.RsvdSecCnt + (f * bpb.FATSz32);
         if (ata_write_sector(drive, fat_start, sector) != 0) return -9;
-        sleep(1);
     }
     
     uint32 first_data_sec = bpb.RsvdSecCnt + (bpb.NumFATs * bpb.FATSz32);
@@ -613,7 +601,6 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     memory_set(sector, 0, 512);
     for (uint8 i = 0; i < bpb.SecPerClus; i++) {
         if (ata_write_sector(drive, root_dir_start_sec + i, sector) != 0) return -12;
-        sleep(1);
     }
 
     return 0;

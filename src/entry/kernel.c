@@ -6,9 +6,13 @@
 #include "../../include/vga.h"
 #include "../../include/multiboot.h"
 #include "../../include/fat32.h"
+#include "../../include/system.h"
 
 void* fat32_disk_img = 0;
 multiboot_info_t *g_mbi = 0;
+
+// Forward declaration for ATA driver functions
+extern void ata_init_drives(void);
 
 int kmain(uint32 magic, multiboot_info_t *mbi)
 {
@@ -20,9 +24,16 @@ int kmain(uint32 magic, multiboot_info_t *mbi)
 
 	isr_install();
 	clearScreen();
-	printf("EYN-OS v0.10\nType 'help' for a list of commands.\n\n");
+	
+
+
+	// Initialize ATA drives
+	ata_init_drives();
+	
+	printf("EYN-OS Release 11\nType 'help' for a list of commands.\n\n");
+
+	// Launch shell
 	launch_shell(0);
-	while(1)
-	{
-	}
+	
+	return 0;
 }

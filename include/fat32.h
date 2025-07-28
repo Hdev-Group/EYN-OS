@@ -68,4 +68,6 @@ int fat32_read_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32
 int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, const char* filename, const char* buf, int bufsize);
 uint32 fat32_next_cluster_sector(uint8 drive, uint32 partition_lba_start, struct fat32_bpb* bpb, uint32 cluster);
 
+void to_fat32_83(const char* input, char* output);
+
 #endif 

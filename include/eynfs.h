@@ -34,7 +34,7 @@ typedef struct {
 } eynfs_superblock_t;
 
 // Directory entry structure (on-disk)
-typedef struct {
+typedef struct __attribute__((packed)) {
     char name[EYNFS_NAME_MAX]; // Null-terminated name
     uint8_t type;              // File or directory
     uint8_t flags;             // Feature flags (e.g., permissions, symlink, etc.)
@@ -65,9 +65,10 @@ int eynfs_find_in_dir(uint8 drive, const eynfs_superblock_t *sb, uint32_t dir_bl
 int eynfs_traverse_path(uint8 drive, const eynfs_superblock_t *sb, const char *path, eynfs_dir_entry_t *out_entry, uint32_t *parent_block, uint32_t *entry_index);
 int eynfs_create_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_block, const char *name, uint8_t type);
 int eynfs_delete_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_block, const char *name);
-int eynfs_read_file(uint8 drive, const eynfs_superblock_t *sb, const eynfs_dir_entry_t *entry, void *buf, size_t bufsize);
+int eynfs_read_file(uint8 drive, const eynfs_superblock_t *sb, const eynfs_dir_entry_t *entry, void *buf, size_t bufsize, size_t offset);
 int eynfs_write_file(uint8 drive, eynfs_superblock_t *sb, eynfs_dir_entry_t *entry, const void *buf, size_t size, uint32_t parent_block, uint32_t entry_index);
 int eynfs_alloc_block(uint8 drive, eynfs_superblock_t *sb);
 int eynfs_free_block(uint8 drive, eynfs_superblock_t *sb, uint32_t block);
+int eynfs_format_partition(uint8 drive, uint8 partition_num);
 
 #endif // EYNFS_H 

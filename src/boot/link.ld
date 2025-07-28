@@ -13,6 +13,13 @@ SECTIONS
         *(.data) 
     }
 
+    .shellcmds :
+    {
+        __start_shellcmds = .;
+        *(.shellcmds)
+        __stop_shellcmds = .;
+    }
+
     .bss  : 
     {
         *(.bss)  

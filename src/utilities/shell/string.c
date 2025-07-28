@@ -3,6 +3,16 @@
 #include "../../../include/util.h"
 #include <stddef.h>
 
+char* strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        const char *h = haystack, *n = needle;
+        while (*h && *n && *h == *n) h++, n++;
+        if (!*n) return (char*)haystack;
+    }
+    return 0;
+} 
+
 uint16 strlength(string ch)
 {
         uint16 i = 0;           //Changed counter to 0
@@ -193,6 +203,33 @@ size_t strlen(const char *s) {
     return n;
 }
 
+char *strchr(const char *s, int c) {
+    while (*s) {
+        if (*s == c) return (char *)s;
+        s++;
+    }
+    if (c == '\0') return (char *)s;
+    return NULL;
+}
+
+char *strrchr(const char *s, int c) {
+    const char *last = NULL;
+    while (*s) {
+        if (*s == c) last = s;
+        s++;
+    }
+    if (c == '\0') return (char *)s;
+    return (char *)last;
+}
+
+int strcmp(const char *s1, const char *s2) {
+    while (*s1 && *s2 && *s1 == *s2) {
+        s1++;
+        s2++;
+    }
+    return (unsigned char)*s1 - (unsigned char)*s2;
+}
+
 // Converts a string to uint32 (decimal only)
 uint32 str_to_uint(const char* s) {
     uint32 n = 0;
@@ -201,6 +238,26 @@ uint32 str_to_uint(const char* s) {
         s++;
     }
     return n;
+}
+
+// Converts a string to integer (decimal only)
+int atoi(const char* s) {
+    int n = 0;
+    int sign = 1;
+    
+    // Handle sign
+    if (*s == '-') {
+        sign = -1;
+        s++;
+    } else if (*s == '+') {
+        s++;
+    }
+    
+    while (*s >= '0' && *s <= '9') {
+        n = n * 10 + (*s - '0');
+        s++;
+    }
+    return n * sign;
 }
 
 // Parses redirection: e.g. "echo hi > file.txt" -> cmd="echo hi", filename="file.txt"
@@ -270,4 +327,21 @@ void calc_to_buf(string str, char* outbuf, int outbufsize) {
     int j = 0;
     while (tmp[j] && j < outbufsize - 1) { outbuf[j] = tmp[j]; j++; }
     outbuf[j] = '\0';
+}
+
+// Simple strcpy implementation
+char *strcpy(char *dest, const char *src) {
+    char *d = dest;
+    while ((*d++ = *src++));
+    return dest;
+}
+
+char* strncat(char* dest, const char* src, unsigned int n) {
+    char* d = dest;
+    while (*d) d++;
+    while (n-- && *src) {
+        *d++ = *src++;
+    }
+    *d = '\0';
+    return dest;
 }

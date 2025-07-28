@@ -1,6 +1,9 @@
 #include "../../include/types.h"
 #include <stdint.h>
+#include <stddef.h>
 #include "../../include/util.h" // for g_user_interrupt
+
+
 
 uint8 inportb (uint16 _port)
 {
@@ -29,8 +32,11 @@ void outw(uint16 _port, uint16 _data)
 void sleep(uint8 times) {
     volatile uint32_t i, j;
     extern volatile int g_user_interrupt;
-    for (i = 0; i < times * 100000; i++) {
+    // Increase the delay multiplier to make sleep more noticeable
+    for (i = 0; i < times * 500000; i++) {
         j = i; // prevent optimization
         if (g_user_interrupt) break;
     }
 }
+
+

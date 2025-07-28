@@ -44,7 +44,7 @@ section .bss
 resb 8192
 stack_space:
 
-Shutdown: ; speaks for itself
+Shutdown: ; actually a reboot but i dont dare rename it
     mov ax, 0x1000
     mov ax, ss
     mov sp, 0xf000

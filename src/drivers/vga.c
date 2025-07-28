@@ -1,12 +1,49 @@
 #include "../../include/vga.h"
 #include "../../include/multiboot.h"
+#include "../../include/eynfs.h"
 #include "../../include/util.h"
 #include <stdarg.h>
+#include <stddef.h>
 
 extern multiboot_info_t *g_mbi;
 
 int width, height;
 int r = 255, g = 255, b = 255; // Default to white
+
+// Shell redirection globals
+int shell_redirect_active = 0;
+char shell_redirect_buf[SHELL_REDIRECT_BUF_SIZE];
+int shell_redirect_pos = 0;
+
+#define LOG_BUF_SIZE 1024
+char shell_log_buf[LOG_BUF_SIZE];
+int shell_log_pos = 0;
+int shell_log_active = 0;
+
+void shell_log_enable() { shell_log_active = 1; }
+void shell_log_disable() { shell_log_active = 0; }
+
+void shell_log_flush() {
+    if (shell_log_pos == 0) return;
+    eynfs_superblock_t sb;
+    if (eynfs_read_superblock(0, 2048, &sb) != 0 || sb.magic != EYNFS_MAGIC) return;
+    eynfs_dir_entry_t entry;
+    uint32_t entry_idx;
+    if (eynfs_find_in_dir(0, &sb, sb.root_dir_block, "log", &entry, &entry_idx) != 0) {
+        if (eynfs_create_entry(0, &sb, sb.root_dir_block, "log", EYNFS_TYPE_FILE) != 0) return;
+        if (eynfs_find_in_dir(0, &sb, sb.root_dir_block, "log", &entry, &entry_idx) != 0) return;
+    }
+    int old_size = entry.size;
+    char* newbuf = (char*)my_malloc(old_size + shell_log_pos);
+    if (!newbuf) return;
+    int n = 0;
+    if (old_size > 0) n = eynfs_read_file(0, &sb, &entry, newbuf, old_size, 0);
+    if (n < 0) n = 0;
+    memory_copy(shell_log_buf, newbuf + n, shell_log_pos);
+    int written = eynfs_write_file(0, &sb, &entry, newbuf, n + shell_log_pos, sb.root_dir_block, entry_idx);
+    my_free(newbuf);
+    shell_log_pos = 0;
+}
 
 void drawRect(int x, int y, int w, int h, int r, int g, int b)
 {
@@ -142,7 +179,112 @@ void printf(const char* format, ...)
 		format += 2; // Skip the color format specifier
 	}
 
-	for (ptr = format; *ptr != '\0'; ptr++) 
+	// Redirection logic
+	if (shell_redirect_active) {
+		// We'll use a local buffer to format the output
+		char temp[512];
+		int temp_pos = 0;
+		for (ptr = (uint8*)format; *ptr != '\0' && temp_pos < 511; ptr++) {
+			if (*ptr == '%') {
+				ptr++;
+				switch (*ptr) {
+					case 's': {
+						char* str = va_arg(ap, char*);
+						while (*str && temp_pos < 511) {
+							temp[temp_pos++] = *str++;
+						}
+						break;
+					}
+					case 'd': {
+						char* num_str = int_to_string(va_arg(ap, int));
+						while (*num_str && temp_pos < 511) {
+							temp[temp_pos++] = *num_str++;
+						}
+						break;
+					}
+					case '%':
+						temp[temp_pos++] = '%';
+						break;
+					case 'c':
+						temp[temp_pos++] = (char)va_arg(ap, int);
+						break;
+				}
+			} else if (*ptr == '\n') {
+				temp[temp_pos++] = '\n';
+			} else {
+				temp[temp_pos++] = *ptr;
+			}
+		}
+		temp[temp_pos] = '\0';
+		
+		// Append to the global buffer (with bounds checking)
+		int to_copy = temp_pos;
+		if (shell_redirect_pos + to_copy >= SHELL_REDIRECT_BUF_SIZE - 1) {
+			to_copy = SHELL_REDIRECT_BUF_SIZE - shell_redirect_pos - 1;
+		}
+		for (int i = 0; i < to_copy; ++i) {
+			shell_redirect_buf[shell_redirect_pos++] = temp[i];
+		}
+		shell_redirect_buf[shell_redirect_pos] = '\0';
+		va_end(ap);
+		return;
+	}
+
+	// Logging logic
+	if (shell_log_active) {
+		va_list ap_log;
+		va_copy(ap_log, ap);
+		// We'll use a local buffer to format the output
+		char temp[512];
+		int temp_pos = 0;
+		const uint8* log_ptr = (const uint8*)format;
+		for (; *log_ptr != '\0' && temp_pos < 511; log_ptr++) {
+			if (*log_ptr == '%') {
+				log_ptr++;
+				switch (*log_ptr) {
+					case 's': {
+						char* str = va_arg(ap_log, char*);
+						while (*str && temp_pos < 511) {
+							temp[temp_pos++] = *str++;
+						}
+						break;
+					}
+					case 'd': {
+						char* num_str = int_to_string(va_arg(ap_log, int));
+						while (*num_str && temp_pos < 511) {
+							temp[temp_pos++] = *num_str++;
+						}
+						break;
+					}
+					case '%':
+						temp[temp_pos++] = '%';
+						break;
+					case 'c':
+						temp[temp_pos++] = (char)va_arg(ap_log, int);
+						break;
+				}
+			} else if (*log_ptr == '\n') {
+				temp[temp_pos++] = '\n';
+			} else {
+				temp[temp_pos++] = *log_ptr;
+			}
+		}
+		temp[temp_pos] = '\0';
+		// Append to the log buffer
+		for (int i = 0; i < temp_pos; ++i) {
+			if (shell_log_pos < LOG_BUF_SIZE - 1) {
+				shell_log_buf[shell_log_pos++] = temp[i];
+			}
+			if (temp[i] == '\n') {
+				shell_log_buf[shell_log_pos] = '\0';
+				shell_log_flush();
+			}
+		}
+		shell_log_buf[shell_log_pos] = '\0';
+		va_end(ap_log);
+	}
+
+	for (ptr = (uint8*)format; *ptr != '\0'; ptr++) 
     {
 		if (*ptr == '%') {
 			ptr++;
@@ -257,4 +399,63 @@ void clearScreen()
 	drawRect(0, 0, g_mbi->framebuffer_width, g_mbi->framebuffer_height, 0, 0, 0);
 	width = 0;
 	height = 0;
+}
+
+// Start redirection
+void start_shell_redirect() {
+	shell_redirect_active = 1;
+	shell_redirect_pos = 0;
+	shell_redirect_buf[0] = '\0';
+}
+
+// Stop redirection
+void stop_shell_redirect() {
+	shell_redirect_active = 0;
+	shell_redirect_pos = 0;
+}
+
+// Minimal snprintf for kernel shell (supports %s, %u, %d, %c)
+int snprintf(char *str, size_t size, const char *format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    size_t pos = 0;
+    for (const char *p = format; *p && pos + 1 < size; ++p) {
+        if (*p == '%') {
+            ++p;
+            if (*p == 's') {
+                char *s = va_arg(ap, char*);
+                while (*s && pos + 1 < size) str[pos++] = *s++;
+            } else if (*p == 'u') {
+                unsigned int v = va_arg(ap, unsigned int);
+                char buf[16];
+                int i = 0;
+                if (v == 0) buf[i++] = '0';
+                else {
+                    while (v && i < 15) { buf[i++] = '0' + (v % 10); v /= 10; }
+                }
+                for (int j = i-1; j >= 0 && pos + 1 < size; --j) str[pos++] = buf[j];
+            } else if (*p == 'd') {
+                int v = va_arg(ap, int);
+                char buf[16];
+                int i = 0, neg = 0;
+                if (v < 0) { neg = 1; v = -v; }
+                if (v == 0) buf[i++] = '0';
+                else {
+                    while (v && i < 15) { buf[i++] = '0' + (v % 10); v /= 10; }
+                }
+                if (neg && pos + 1 < size) str[pos++] = '-';
+                for (int j = i-1; j >= 0 && pos + 1 < size; --j) str[pos++] = buf[j];
+            } else if (*p == 'c') {
+                char c = (char)va_arg(ap, int);
+                str[pos++] = c;
+            } else if (*p == '%') {
+                str[pos++] = '%';
+            }
+        } else {
+            str[pos++] = *p;
+        }
+    }
+    str[pos] = '\0';
+    va_end(ap);
+    return pos;
 }

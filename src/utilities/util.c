@@ -205,10 +205,171 @@ uint8 check_string_numbers(string str) {
 	return res;
 }
 
-void * my_malloc(int nbytes)
-{
-	char variable[nbytes];
-	return &variable;
+// --- Robust Heap Manager Rewrite ---
+#define HEAP_START 0x1000000  // 16MB - safe area for heap
+#define HEAP_SIZE 0x1000000   // 16MB heap size
+#define BLOCK_HEADER_SIZE 16
+#define MIN_BLOCK_SIZE 32
+#define NO_BLOCK 0xFFFFFFFF
+
+typedef struct {
+    uint32_t size;        // Size of the block (including header)
+    uint32_t used;        // 1 if used, 0 if free
+    uint32_t next;        // Offset to next block (NO_BLOCK if last)
+    uint32_t prev;        // Offset to previous block (NO_BLOCK if first)
+} block_header_t;
+
+static uint8_t* heap_start = (uint8_t*)HEAP_START;
+static uint32_t first_block = 0;
+static int memory_initialized = 0;
+
+void init_memory_manager() {
+    if (memory_initialized) return;
+    memory_set(heap_start, 0, HEAP_SIZE);
+    block_header_t* first = (block_header_t*)heap_start;
+    first->size = HEAP_SIZE;
+    first->used = 0;
+    first->next = NO_BLOCK;
+    first->prev = NO_BLOCK;
+    first_block = 0;
+    memory_initialized = 1;
+}
+
+static uint32_t find_free_block(uint32_t size) {
+    uint32_t current = first_block;
+    while (current != NO_BLOCK) {
+        block_header_t* block = (block_header_t*)(heap_start + current);
+        if (!block->used && block->size >= size) {
+            return current;
+        }
+        current = block->next;
+    }
+    return NO_BLOCK;
+}
+
+static void split_block(uint32_t block_offset, uint32_t needed_size) {
+    block_header_t* block = (block_header_t*)(heap_start + block_offset);
+    if (block->size < needed_size + BLOCK_HEADER_SIZE + MIN_BLOCK_SIZE) {
+        return; // Don't split if the remainder would be too small
+    }
+    uint32_t new_block_offset = block_offset + needed_size;
+    block_header_t* new_block = (block_header_t*)(heap_start + new_block_offset);
+    new_block->size = block->size - needed_size;
+    new_block->used = 0;
+    new_block->next = block->next;
+    new_block->prev = block_offset;
+    if (block->next != NO_BLOCK) {
+        block_header_t* next_block = (block_header_t*)(heap_start + block->next);
+        next_block->prev = new_block_offset;
+    }
+    block->size = needed_size;
+    block->next = new_block_offset;
+}
+
+static void merge_free_blocks() {
+    uint32_t current = first_block;
+    while (current != NO_BLOCK) {
+        block_header_t* block = (block_header_t*)(heap_start + current);
+        while (block->next != NO_BLOCK) {
+            block_header_t* next_block = (block_header_t*)(heap_start + block->next);
+            if (!block->used && !next_block->used) {
+                block->size += next_block->size;
+                block->next = next_block->next;
+                if (next_block->next != NO_BLOCK) {
+                    block_header_t* next_next = (block_header_t*)(heap_start + next_block->next);
+                    next_next->prev = current;
+                }
+            } else {
+                break;
+            }
+        }
+        current = block->next;
+    }
+}
+
+void* my_malloc(int nbytes) {
+    if (!memory_initialized) {
+        init_memory_manager();
+    }
+    if (nbytes <= 0) return NULL;
+    uint32_t total_size = ((nbytes + BLOCK_HEADER_SIZE + 7) / 8) * 8;
+    uint32_t block_offset = find_free_block(total_size);
+    if (block_offset == NO_BLOCK) {
+        printf("%cmy_malloc: Out of memory\n", 255, 0, 0);
+        return NULL;
+    }
+    block_header_t* block = (block_header_t*)(heap_start + block_offset);
+    block->used = 1;
+    split_block(block_offset, total_size);
+    // Return pointer to the data area (after header)
+    return (void*)(heap_start + block_offset + BLOCK_HEADER_SIZE);
+}
+
+void my_free(void* ptr) {
+    if (!ptr || !memory_initialized) return;
+    uint8_t* data_ptr = (uint8_t*)ptr;
+    uint32_t block_offset = data_ptr - heap_start - BLOCK_HEADER_SIZE;
+    if (block_offset >= HEAP_SIZE) return; // Invalid pointer
+    block_header_t* block = (block_header_t*)(heap_start + block_offset);
+    if (!block->used) return; // Already freed
+    block->used = 0;
+    merge_free_blocks();
+}
+
+void* my_realloc(void* ptr, int new_size) {
+    if (!ptr) return my_malloc(new_size);
+    if (new_size <= 0) {
+        my_free(ptr);
+        return NULL;
+    }
+    uint8_t* data_ptr = (uint8_t*)ptr;
+    uint32_t block_offset = data_ptr - heap_start - BLOCK_HEADER_SIZE;
+    if (block_offset >= HEAP_SIZE) return NULL; // Invalid pointer
+    block_header_t* block = (block_header_t*)(heap_start + block_offset);
+    uint32_t current_size = block->size - BLOCK_HEADER_SIZE;
+    if (new_size <= current_size) {
+        return ptr; // No need to reallocate
+    }
+    void* new_ptr = my_malloc(new_size);
+    if (!new_ptr) return NULL;
+    memory_copy((char*)ptr, (char*)new_ptr, current_size);
+    my_free(ptr);
+    return new_ptr;
+}
+
+void* my_calloc(int count, int size) {
+    int total_size = count * size;
+    void* ptr = my_malloc(total_size);
+    if (ptr) {
+        memory_set((uint8*)ptr, 0, total_size);
+    }
+    return ptr;
+}
+
+void print_memory_stats() {
+    if (!memory_initialized) {
+        printf("%cMemory manager not initialized\n", 255, 0, 0);
+        return;
+    }
+    uint32_t total_free = 0;
+    uint32_t total_used = 0;
+    uint32_t block_count = 0;
+    uint32_t current = first_block;
+    while (current != NO_BLOCK) {
+        block_header_t* block = (block_header_t*)(heap_start + current);
+        if (block->used) {
+            total_used += block->size;
+        } else {
+            total_free += block->size;
+        }
+        block_count++;
+        current = block->next;
+    }
+    printf("%cMemory Stats:\n", 255, 255, 255);
+    printf("%c  Total Heap: %d bytes\n", 255, 255, 255, HEAP_SIZE);
+    printf("%c  Used: %d bytes\n", 255, 255, 255, total_used);
+    printf("%c  Free: %d bytes\n", 255, 255, 255, total_free);
+    printf("%c  Blocks: %d\n", 255, 255, 255, block_count);
 }
 
 void putchar(char c) {
