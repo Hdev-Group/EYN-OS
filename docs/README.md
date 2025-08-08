@@ -14,6 +14,7 @@ Welcome to the EYN-OS documentation! This directory contains comprehensive docum
 - **[EYNFS](filesystems/eynfs.md)** - EYN-OS native filesystem specification
 - **[FAT32 Support](filesystems/fat32.md)** - FAT32 filesystem driver
 - **[Filesystem Commands](filesystems/commands.md)** - `ls`, `cd`, `del`, etc.
+- **[REI Image Format](filesystems/rei-format.md)** - Custom image format specification
 
 ### User Interface
 - **[TUI System](ui/tui.md)** - Text User Interface framework
@@ -39,6 +40,7 @@ Welcome to the EYN-OS documentation! This directory contains comprehensive docum
 - **[Header Files](api/headers.md)** - Complete header file documentation
 - **[Function Reference](api/functions.md)** - All public API functions
 - **[Data Structures](api/structures.md)** - Important data structures and types
+- **[Syscalls](api/syscalls.md)** - System call interface and programming guide
 
 ## Quick Start
 
@@ -60,5 +62,3 @@ When adding new features to EYN-OS, please:
 - `Makefile` - Build system documentation
 - `src/` - Source code with inline documentation
 - `include/` - Header files with function documentation
-
----

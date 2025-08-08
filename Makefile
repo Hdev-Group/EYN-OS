@@ -1,23 +1,32 @@
 COMPILER = gcc
 LINKER = ld
 ASSEMBLER = nasm
-CFLAGS = -m32 -c -ffreestanding -w -fcommon -Oz -fno-stack-protector
+CFLAGS = -m32 -c -ffreestanding -w -fcommon -Oz -fno-stack-protector -I include/
 ASFLAGS = -f elf32
 LDFLAGS = -m elf_i386 -T src/boot/link.ld
 EMULATOR = qemu-system-i386
 EMULATOR_FLAGS = -kernel
 
-OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o obj/fat32.o obj/ata.o obj/eynfs.o obj/shell_commands.o obj/fs_commands.o obj/fdisk_commands.o obj/format_command.o obj/write_editor.o obj/tui.o obj/help_tui.o obj/assemble.o obj/run_command.o obj/history.o obj/game_engine.o
+OBJS = obj/kasm.o obj/kc.o obj/idt.o obj/isr.o obj/syscall.o obj/kb.o obj/string.o obj/system.o obj/util.o obj/shell.o obj/math.o obj/vga.o obj/fat32.o obj/ata.o obj/eynfs.o obj/rei.o obj/shell_commands.o obj/fs_commands.o obj/fdisk_commands.o obj/format_command.o obj/write_editor.o obj/tui.o obj/help_tui.o obj/assemble.o obj/instruction_set.o obj/run_command.o obj/history.o obj/game_engine.o obj/subcommands.o obj/predictive_memory.o obj/predictive_commands.o obj/zero_copy.o obj/zero_copy_commands.o
 OUTPUT = tmp/boot/kernel.bin
+
+# Source files to object files
 
 all:$(OBJS)
 	mkdir tmp/ -p
 	mkdir tmp/boot/ -p
 	$(LINKER) $(LDFLAGS) -o $(OUTPUT) $(OBJS)
 
+docs: all
+	python3 devtools/generate_command_docs.py src/
+
 obj/kasm.o:src/boot/kernel.asm
 	mkdir obj/ -p
 	$(ASSEMBLER) $(ASFLAGS) -o obj/kasm.o src/boot/kernel.asm
+
+obj/syscall.o:src/cpu/syscall.asm
+	mkdir obj/ -p
+	$(ASSEMBLER) $(ASFLAGS) -o obj/syscall.o src/cpu/syscall.asm
 	
 obj/kc.o:src/entry/kernel.c
 	$(COMPILER) $(CFLAGS) src/entry/kernel.c -o obj/kc.o 
@@ -58,6 +67,9 @@ obj/ata.o:src/drivers/ata.c
 obj/eynfs.o:src/drivers/eynfs.c
 	$(COMPILER) $(CFLAGS) src/drivers/eynfs.c -o obj/eynfs.o
 
+obj/rei.o:src/drivers/rei.c
+	$(COMPILER) $(CFLAGS) src/drivers/rei.c -o obj/rei.o
+
 obj/shell_commands.o:src/utilities/shell/shell_commands.c
 	$(COMPILER) $(CFLAGS) src/utilities/shell/shell_commands.c -o obj/shell_commands.o
 
@@ -88,39 +100,39 @@ obj/tui.o:src/utilities/tui/tui.c
 obj/help_tui.o:src/utilities/shell/help_tui.c
 	$(COMPILER) $(CFLAGS) src/utilities/shell/help_tui.c -o obj/help_tui.o
 
-obj/assemble.o:src/utilities/shell/assemble.c
+obj/assemble.o:src/utilities/shell/assemble.c src/utilities/shell/instruction_set.c
 	$(COMPILER) $(CFLAGS) src/utilities/shell/assemble.c -o obj/assemble.o
+	$(COMPILER) $(CFLAGS) src/utilities/shell/instruction_set.c -o obj/instruction_set.o
 
 obj/game_engine.o:src/utilities/games/game_engine.c
 	$(COMPILER) $(CFLAGS) src/utilities/games/game_engine.c -o obj/game_engine.o
 
-fat32img:
-	rm -f disk.img
-	dd if=/dev/zero of=disk.img bs=1M count=5
-	mkfs.fat -F 32 disk.img
-	# Copy all source and header files to the root of the disk image
-	mcopy -i disk.img src/drivers/*.c ::/
-	mcopy -i disk.img src/boot/*.asm ::/
-	mcopy -i disk.img src/boot/*.ld ::/
-	mcopy -i disk.img src/utilities/*.c ::/
-	mcopy -i disk.img src/utilities/shell/*.c ::/
-	mcopy -i disk.img src/utilities/basic/*.c ::/
-	mcopy -i disk.img src/cpu/*.c ::/
-	mcopy -i disk.img src/entry/*.c ::/
-	mcopy -i disk.img include/*.h ::/
-	mcopy -i disk.img README.md ::/
+obj/subcommands.o:src/utilities/shell/subcommands.c
+	$(COMPILER) $(CFLAGS) src/utilities/shell/subcommands.c -o obj/subcommands.o
 
-build: all eynfsimg fat32img
+obj/predictive_memory.o:src/utilities/predictive_memory.c
+	$(COMPILER) $(CFLAGS) src/utilities/predictive_memory.c -o obj/predictive_memory.o
+
+obj/predictive_commands.o:src/utilities/shell/predictive_commands.c
+	$(COMPILER) $(CFLAGS) src/utilities/shell/predictive_commands.c -o obj/predictive_commands.o
+
+obj/zero_copy.o:src/utilities/zero_copy.c
+	$(COMPILER) $(CFLAGS) src/utilities/zero_copy.c -o obj/zero_copy.o
+
+obj/zero_copy_commands.o:src/utilities/shell/zero_copy_commands.c
+	$(COMPILER) $(CFLAGS) src/utilities/shell/zero_copy_commands.c -o obj/zero_copy_commands.o
+
+# Actually building the OS (The stuff you should actually run, i.e. make run, make build, etc.)
+
+build: all eynfsimg docs
 	mkdir -p tmp/grub_ultra_minimal/boot/grub
 	cp tmp/boot/kernel.bin tmp/grub_ultra_minimal/boot/
-	cp disk.img tmp/grub_ultra_minimal/boot/
 	@echo 'set default=0' > tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo 'set timeout=0' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo 'set gfxmode=text' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo '' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo 'menuentry "EYN-OS" {' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo '    multiboot /boot/kernel.bin' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
-	@echo '    module /boot/disk.img' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo '    boot' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	@echo '}' >> tmp/grub_ultra_minimal/boot/grub/grub.cfg
 	grub-mkrescue --modules="multiboot multiboot2 part_msdos ext2 iso9660" --locales="" --themes="" --fonts="" --compress=xz -o EYNOS.iso tmp/grub_ultra_minimal/
@@ -141,7 +153,7 @@ build: all eynfsimg fat32img
 	@ls -lh EYNOS.iso
 
 clean:
-	rm -rf obj/*.o tmp/boot/kernel.bin eynfs.img disk.img eynfs_format EYNOS.iso
+	rm -rf obj/*.o tmp/boot/kernel.bin eynfs.img eynfs_format EYNOS.iso
 	rm -rf tmp/grub_minimal tmp/grub_ultra_minimal
 	rm -f userland/*.o userland/*.bin
 
@@ -154,17 +166,23 @@ eynfs_format: eynfs_format.c include/eynfs.h
 # Create and format a 5MB EYNFS disk image
 eynfsimg: eynfs_format
 	rm -f eynfs.img
-	dd if=/dev/zero of=eynfs.img bs=1M count=5
+	dd if=/dev/zero of=eynfs.img bs=1M count=10
 	$(COMPILER) -o eynfs_format eynfs_format.c
 	./eynfs_format eynfs.img
 	python3 devtools/copy_testdir_to_eynfs.py
 
+# Rebuilds and runs the OS
+
 run: build
 	qemu-system-i386 -cdrom EYNOS.iso \
-	  -hda eynfs.img \
-	  -boot d
+	-hda eynfs.img \
+	-boot d \
+	-m 16M
+
+# Just runs the OS, no rebuilding.
 
 test:
 	qemu-system-i386 -cdrom EYNOS.iso \
-	  -hda eynfs.img \
-	  -boot d
+	-hda eynfs.img \
+	-boot d \
+	-m 64M

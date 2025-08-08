@@ -1,10 +1,12 @@
-#include "../../../include/shell.h"
-#include "../../../include/vga.h"
-#include "../../../include/util.h"
-#include "../../../include/string.h"
-#include "../../../include/system.h"
-#include "../../../include/shell_command_info.h"
+#include <shell.h>
+#include <vga.h>
+#include <util.h>
+#include <string.h>
+#include <system.h>
+#include <shell_command_info.h>
 #include <stdint.h>
+
+void history_cmd(string arg);
 
 // Global command history instance
 command_history_t g_command_history = {0};
@@ -263,4 +265,4 @@ string readStr_with_history(command_history_t* history) {
     return (string)buffstr;
 }
 
-REGISTER_SHELL_COMMAND(history, "history", "Show or clear command history.\nUsage: history [clear]\nExample: history | history clear", "history");
+REGISTER_SHELL_COMMAND(history, "history", history_cmd, CMD_STREAMING, "Show or clear command history.\nUsage: history [clear]\nExample: history | history clear", "history");

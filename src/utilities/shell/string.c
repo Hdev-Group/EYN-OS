@@ -1,7 +1,118 @@
-#include "../../../include/string.h"
-#include "../../../include/vga.h"
-#include "../../../include/util.h"
+#include <string.h>
+#include <vga.h>
+#include <util.h>
 #include <stddef.h>
+
+// Input validation and buffer overflow protection
+static int input_validation_errors = 0;
+
+// Validate string bounds and content
+int validate_string(const char* str, int max_length) {
+    if (!str) return 0;
+    
+    // Check for null bytes and excessive length
+    for (int i = 0; i < max_length; i++) {
+        if (str[i] == '\0') break;
+        if (str[i] < 32 || str[i] > 126) {
+            // Invalid character (outside printable ASCII)
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// Safe string copy with bounds checking
+char* safe_strcpy(char* dest, const char* src, int dest_size) {
+    if (!dest || !src || dest_size <= 0) {
+        input_validation_errors++;
+        return NULL;
+    }
+    
+    // Validate source string
+    if (!validate_string(src, dest_size)) {
+        input_validation_errors++;
+        return NULL;
+    }
+    
+    int i = 0;
+    while (i < dest_size - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0'; // Always null-terminate
+    
+    return dest;
+}
+
+// Safe string concatenation with bounds checking
+char* safe_strcat(char* dest, const char* src, int dest_size) {
+    if (!dest || !src || dest_size <= 0) {
+        input_validation_errors++;
+        return NULL;
+    }
+    
+    // Find end of destination string
+    int dest_len = 0;
+    while (dest_len < dest_size && dest[dest_len] != '\0') {
+        dest_len++;
+    }
+    
+    // Validate source string
+    if (!validate_string(src, dest_size - dest_len)) {
+        input_validation_errors++;
+        return NULL;
+    }
+    
+    // Concatenate safely
+    int i = 0;
+    while (dest_len + i < dest_size - 1 && src[i] != '\0') {
+        dest[dest_len + i] = src[i];
+        i++;
+    }
+    dest[dest_len + i] = '\0'; // Always null-terminate
+    
+    return dest;
+}
+
+// Validate file path for traversal attacks
+int validate_file_path(const char* path) {
+    if (!path) return 0;
+    
+    // Check for path traversal attempts
+    if (strstr(path, "..") || strstr(path, "//") || strstr(path, "\\")) {
+        return 0; // Potential path traversal
+    }
+    
+    // Check for absolute paths (should be relative)
+    if (path[0] == '/') {
+        return 0; // Absolute path not allowed
+    }
+    
+    // Validate string content
+    return validate_string(path, 256);
+}
+
+// Sanitize input string
+char* sanitize_input(char* input, int max_length) {
+    if (!input || max_length <= 0) return NULL;
+    
+    // Remove control characters and normalize
+    int j = 0;
+    for (int i = 0; i < max_length && input[i] != '\0'; i++) {
+        if (input[i] >= 32 && input[i] <= 126) {
+            input[j++] = input[i];
+        }
+    }
+    input[j] = '\0';
+    
+    return input;
+}
+
+// Get input validation error count
+int get_input_validation_errors() {
+    return input_validation_errors;
+}
 
 char* strstr(const char* haystack, const char* needle) {
     if (!*needle) return (char*)haystack;
@@ -331,8 +442,13 @@ void calc_to_buf(string str, char* outbuf, int outbufsize) {
 
 // Simple strcpy implementation
 char *strcpy(char *dest, const char *src) {
+    if (!dest || !src) return dest;
+    
     char *d = dest;
-    while ((*d++ = *src++));
+    while (*src && (d - dest) < 255) {  // Add reasonable bounds check
+        *d++ = *src++;
+    }
+    *d = '\0';
     return dest;
 }
 

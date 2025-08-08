@@ -1,11 +1,11 @@
-#include "../../../include/fdisk_commands.h"
-#include "../../../include/types.h"
-#include "../../../include/vga.h"
-#include "../../../include/util.h"
-#include "../../../include/system.h"
-#include "../../../include/string.h"
+#include <fdisk_commands.h>
+#include <types.h>
+#include <vga.h>
+#include <util.h>
+#include <system.h>
+#include <string.h>
 #include <stdint.h>
-#include "../../../include/shell_command_info.h"
+#include <shell_command_info.h>
 
 // fdisk_list implementation
 void fdisk_list() {
@@ -128,4 +128,4 @@ void fdisk_cmd_handler(string ch) {
     }
 } 
 
-REGISTER_SHELL_COMMAND(fdisk, "fdisk", "List partition table or create partitions.\nUsage: fdisk [create <start_lba> <size> <type>]", "fdisk create 2048 1024000 0x0C"); 
+REGISTER_SHELL_COMMAND(fdisk, "fdisk", fdisk_cmd_handler, CMD_STREAMING, "List partition table or create partitions.\nUsage: fdisk [create <start_lba> <size> <type>]", "fdisk create 2048 1024000 0x0C"); 

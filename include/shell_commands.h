@@ -20,5 +20,19 @@ void history_cmd(string ch);
 void sort_cmd(string ch);
 void search_cmd(string ch);
 void game_cmd(string ch);
+void error_cmd(string ch);
+void validate_cmd(string ch);
+void process_cmd(string ch);
+void portable_cmd(string ch);
+void init_cmd(string ch);
+
+// Streaming command system functions
+void load_cmd(string ch);
+void unload_cmd(string ch);
+void status_cmd(string ch);
+void clear_cmd(string ch);
+void help_cmd(string ch);
+void ls_cmd(string ch);
+void run_cmd(string ch);
 
 #endif 

@@ -1,13 +1,13 @@
-#include "../../../include/format_command.h"
-#include "../../../include/shell_command_info.h"
-#include "../../../include/types.h"
+#include <format_command.h>
+#include <shell_command_info.h>
+#include <types.h>
 #include <stdint.h>
-#include "../../../include/system.h"
-#include "../../../include/string.h"
-#include "../../../include/util.h"
-#include "../../../include/eynfs.h"
-#include "../../../include/fat32.h"
-#include "../../../include/vga.h" // for printf
+#include <system.h>
+#include <string.h>
+#include <util.h>
+#include <eynfs.h>
+#include <fat32.h>
+#include <vga.h> // for printf
 
 extern char* readStr();
 
@@ -162,4 +162,4 @@ void format_cmd_handler(string ch) {
     }
 } 
 
-REGISTER_SHELL_COMMAND(format, "format", "Format partition n (0-3) as FAT32 or EYNFS.\nFAT32: widely supported, max 4GB files.\nEYNFS: native, supports long filenames, fast directory access.\nUsage: format <partition_num> <filesystem_type>", "format 1 fat32"); 
+REGISTER_SHELL_COMMAND(format, "format", format_cmd_handler, CMD_STREAMING, "Format partition n (0-3) as FAT32 or EYNFS.\nFAT32: widely supported, max 4GB files.\nEYNFS: native, supports long filenames, fast directory access.\nUsage: format <partition_num> <filesystem_type>", "format 1 fat32"); 

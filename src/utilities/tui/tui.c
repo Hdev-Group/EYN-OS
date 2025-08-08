@@ -1,6 +1,6 @@
-#include "../../../include/tui.h"
-#include "../../../include/vga.h"
-#include "../../../include/system.h"
+#include <tui.h>
+#include <vga.h>
+#include <system.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -121,7 +121,7 @@ void tui_draw_text_area(const tui_window_t* win, const char* text, int scroll_of
 
 void tui_draw_status_bar(const tui_window_t* win, const char* text, tui_style_t style) {
     // If a window is provided, draw the status bar just below the window; otherwise, draw at the screen bottom.
-    int y = (win == NULL) ? (tui_screen_height - 2) : (win->y + win->height);
+    int y = (win == NULL) ? (tui_screen_height) : (win->y + win->height);
     int x = (win == NULL) ? 0 : win->x;
     int width = (win == NULL) ? tui_screen_width : win->width;
     char bar[width + 1];

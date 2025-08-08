@@ -4,6 +4,30 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Instruction categories
+typedef enum {
+    INST_CAT_DATA_MOVEMENT,
+    INST_CAT_ARITHMETIC,
+    INST_CAT_LOGICAL,
+    INST_CAT_CONTROL_FLOW,
+    INST_CAT_STRING,
+    INST_CAT_SYSTEM,
+    INST_CAT_FPU,
+    INST_CAT_MMX,
+    INST_CAT_SSE
+} InstructionCategory;
+
+// Instruction encoding structure
+typedef struct {
+    const char* mnemonic;
+    uint8_t opcode;
+    uint8_t modrm_required;
+    uint8_t immediate_required;
+    uint8_t displacement_required;
+    InstructionCategory category;
+    const char* description;
+} InstructionInfo;
+
 // Section types
 typedef enum {
     SECTION_NONE = 0,
@@ -40,6 +64,8 @@ typedef struct Label {
     char name[64];
     SectionType section;
     int address;
+    int line_num;
+    int instr_index; // For SECTION_TEXT: instruction index at definition; for SECTION_DATA: data-def index
     struct Label* next;
 } Label;
 
@@ -103,10 +129,23 @@ void add_instruction(AST* ast, Instruction* inst);
 void add_label(AST* ast, Label* label);
 void add_data_def(AST* ast, DataDef* def);
 AST* parse(const char *src);
+void free_ast(AST* ast);  // Add function to free AST
 void build_symbol_table(AST* ast, SymbolTable* table);
 int lookup_label(SymbolTable* table, const char* name, SectionType section);
-int generate_code(AST *ast, SymbolTable *table, uint8_t **code, size_t *code_size, uint8_t **data, size_t *data_size);
+int generate_code(AST *ast, SymbolTable *table, uint8_t **code, size_t *code_size, uint8_t **data, size_t *data_size, const char* input_path);
+int assemble(const char *input_path, const char *output_path);
 int assemble_main(int argc, char *argv[]);
 void symbol_table_init(SymbolTable* table);
+
+// Instruction set functions
+const InstructionInfo* find_instruction_info(const char* mnemonic);
+int get_register_encoding(const char* reg_name);
+int get_register8_encoding(const char* reg_name);
+int get_seg_reg_encoding(const char* reg_name);
+int is_valid_register(const char* name);
+int is_valid_instruction(const char* name);
+const char* get_category_description(InstructionCategory cat);
+void print_instruction_help(const char* mnemonic);
+void list_all_instructions(void);
 
 #endif // ASSEMBLE_H 

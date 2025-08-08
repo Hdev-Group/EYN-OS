@@ -126,9 +126,33 @@ def find_dir_block(f, sb, path):
 def add_dir(f, sb, parent_block, dirname):
     entries, blocks = read_dir_chain(f, parent_block)
     slot = find_free_dir_slot(entries)
+    
+    # If no free slot in existing blocks, allocate a new block
     if slot >= len(entries):
-        print(f"No free directory slot for {dirname}, skipping.")
-        return None
+        # Find the last block in the chain
+        last_block = blocks[-1][0] if blocks else parent_block
+        
+        # Allocate a new directory block
+        new_parent_block = find_free_block(f, sb)
+        
+        # Link the last block to the new block
+        f.seek(last_block * EYNFS_BLOCK_SIZE)
+        data = bytearray(f.read(EYNFS_BLOCK_SIZE))
+        struct.pack_into('<I', data, 0, new_parent_block)  # Set next_block pointer
+        f.seek(last_block * EYNFS_BLOCK_SIZE)
+        f.write(data)
+        
+        # Initialize the new block
+        f.seek(new_parent_block * EYNFS_BLOCK_SIZE)
+        new_block_data = bytearray(EYNFS_BLOCK_SIZE)
+        struct.pack_into('<I', new_block_data, 0, 0)  # next_block = 0
+        f.write(new_block_data)
+        
+        # Update our tracking
+        blocks.append((new_parent_block, 0))
+        slot = len(entries)  # First entry in the new block
+        print(f"Allocated new parent directory block {new_parent_block} for {dirname}")
+    
     new_block = find_free_block(f, sb)
     name_bytes = dirname.encode('utf-8')[:EYNFS_NAME_MAX-1] + b'\0'
     name_bytes = name_bytes.ljust(EYNFS_NAME_MAX, b'\0')
@@ -147,9 +171,33 @@ def add_dir(f, sb, parent_block, dirname):
 def add_file(f, sb, dir_block, filename, filedata):
     entries, blocks = read_dir_chain(f, dir_block)
     slot = find_free_dir_slot(entries)
+    
+    # If no free slot in existing blocks, allocate a new block
     if slot >= len(entries):
-        print(f"No free directory slot for {filename}, skipping.")
-        return
+        # Find the last block in the chain
+        last_block = blocks[-1][0] if blocks else dir_block
+        
+        # Allocate a new directory block
+        new_block = find_free_block(f, sb)
+        
+        # Link the last block to the new block
+        f.seek(last_block * EYNFS_BLOCK_SIZE)
+        data = bytearray(f.read(EYNFS_BLOCK_SIZE))
+        struct.pack_into('<I', data, 0, new_block)  # Set next_block pointer
+        f.seek(last_block * EYNFS_BLOCK_SIZE)
+        f.write(data)
+        
+        # Initialize the new block
+        f.seek(new_block * EYNFS_BLOCK_SIZE)
+        new_block_data = bytearray(EYNFS_BLOCK_SIZE)
+        struct.pack_into('<I', new_block_data, 0, 0)  # next_block = 0
+        f.write(new_block_data)
+        
+        # Update our tracking
+        blocks.append((new_block, 0))
+        slot = len(entries)  # First entry in the new block
+        print(f"Allocated new directory block {new_block} for {filename}")
+    
     first_block, size = write_file_data(f, sb, filedata)
     name_bytes = filename.encode('utf-8')[:EYNFS_NAME_MAX-1] + b'\0'
     name_bytes = name_bytes.ljust(EYNFS_NAME_MAX, b'\0')

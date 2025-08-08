@@ -1,8 +1,8 @@
-#include "../../../include/string.h"
-#include "../../../include/vga.h"
-#include "../../../include/util.h"
-#include "../../../include/multiboot.h"
-#include "../../../include/math.h"
+#include <string.h>
+#include <vga.h>
+#include <util.h>
+#include <multiboot.h>
+#include <math.h>
 
 extern multiboot_info_t *g_mbi;
 

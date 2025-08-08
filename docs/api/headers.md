@@ -167,6 +167,44 @@ int eynfs_write_file(uint8_t drive, eynfs_superblock_t* sb, eynfs_dir_entry_t* e
 FAT32 filesystem support.
 
 #### FAT32 Structures
+
+### `rei.h`
+REI (Raw EYN Image) format support.
+
+#### Data Structures
+```c
+typedef struct {
+    uint32_t magic;        // Magic number to identify REI
+    uint16_t width;        // Image width in pixels
+    uint16_t height;       // Image height in pixels
+    uint8_t depth;         // Color depth (1, 3, or 4 bytes per pixel)
+    uint8_t reserved1;     // Reserved for future use
+    uint16_t reserved2;    // Reserved for future use
+} rei_header_t;
+
+typedef struct {
+    rei_header_t header;
+    uint8_t* data;         // Raw pixel data
+    size_t data_size;      // Size of pixel data
+} rei_image_t;
+```
+
+#### Core Functions
+```c
+int rei_parse_image(const uint8_t* data, size_t size, rei_image_t* image);
+int rei_display_image(const rei_image_t* image, int x, int y);
+void rei_free_image(rei_image_t* image);
+```
+
+#### Constants
+```c
+#define REI_MAGIC 0x52454900        // Magic number ('REI\0')
+#define REI_MAX_WIDTH 320           // Maximum image width
+#define REI_MAX_HEIGHT 200          // Maximum image height
+#define REI_DEPTH_MONO 1            // Monochrome (1 byte per pixel)
+#define REI_DEPTH_RGB 3             // RGB (3 bytes per pixel)
+#define REI_DEPTH_RGBA 4            // RGBA (4 bytes per pixel)
+```
 ```c
 typedef struct {
     uint8_t jump[3];

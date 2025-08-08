@@ -10,7 +10,7 @@
 #define EYNFS_NAME_MAX 32
 
 // Filesystem version
-#define EYNFS_VERSION 1
+#define EYNFS_VERSION 11
 
 // Block size for EYNFS (used throughout the FS)
 #define EYNFS_BLOCK_SIZE 512
@@ -61,6 +61,7 @@ int eynfs_read_superblock(uint8 drive, uint32 lba, eynfs_superblock_t *sb);
 int eynfs_write_superblock(uint8 drive, uint32 lba, const eynfs_superblock_t *sb);
 int eynfs_read_dir_table(uint8 drive, uint32 lba, eynfs_dir_entry_t *entries, size_t max_entries);
 int eynfs_write_dir_table(uint8 drive, uint32 lba, const eynfs_dir_entry_t *entries, size_t num_entries);
+int eynfs_count_dir_entries(uint8 drive, uint32_t lba);
 int eynfs_find_in_dir(uint8 drive, const eynfs_superblock_t *sb, uint32_t dir_block, const char *name, eynfs_dir_entry_t *out_entry, uint32_t *out_index);
 int eynfs_traverse_path(uint8 drive, const eynfs_superblock_t *sb, const char *path, eynfs_dir_entry_t *out_entry, uint32_t *parent_block, uint32_t *entry_index);
 int eynfs_create_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_block, const char *name, uint8_t type);
@@ -70,5 +71,26 @@ int eynfs_write_file(uint8 drive, eynfs_superblock_t *sb, eynfs_dir_entry_t *ent
 int eynfs_alloc_block(uint8 drive, eynfs_superblock_t *sb);
 int eynfs_free_block(uint8 drive, eynfs_superblock_t *sb, uint32_t block);
 int eynfs_format_partition(uint8 drive, uint8 partition_num);
+
+// New improved file operations
+int eynfs_open(const char* path, int mode);
+int eynfs_seek(int fd, size_t offset, int whence);
+int eynfs_close(int fd);
+
+// File operation modes
+#define EYNFS_READ  0
+#define EYNFS_WRITE 1
+#define EYNFS_APPEND 2
+
+// Seek modes
+#define EYNFS_SEEK_SET 0
+#define EYNFS_SEEK_CUR 1
+#define EYNFS_SEEK_END 2
+
+// Performance monitoring functions
+void eynfs_get_cache_stats(uint32_t* hits, uint32_t* misses);
+void eynfs_reset_cache_stats();
+void eynfs_cache_clear();
+int eynfs_alloc_block_fast(uint8 drive, eynfs_superblock_t *sb);
 
 #endif // EYNFS_H 

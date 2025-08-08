@@ -1,6 +1,6 @@
 # EYN-OS Shell System
 
-The EYN-OS shell provides a command-line interface for interacting with the operating system. It features command history, tab completion, and a rich set of built-in commands.
+The EYN-OS shell provides a command-line interface for interacting with the operating system. It features command history, tab completion, and a rich set of built-in commands with an innovative streaming architecture for memory efficiency.
 
 ## Shell Architecture
 
@@ -8,6 +8,7 @@ The EYN-OS shell provides a command-line interface for interacting with the oper
 - **Command Parser**: Processes user input and dispatches commands
 - **History System**: Stores and retrieves previous commands
 - **Input Handler**: Manages keyboard input and special keys
+- **Streaming Command System**: Dynamic command loading for memory efficiency
 - **Command Registry**: Maintains list of available commands
 
 ### Design Philosophy
@@ -15,8 +16,33 @@ The EYN-OS shell provides a command-line interface for interacting with the oper
 - **User-Friendly**: Clear error messages and helpful feedback
 - **Extensible**: Easy to add new commands
 - **Consistent**: Uniform command interface
+- **Memory Efficient**: Streaming architecture for low-end systems
 
-## ⌨User Interface
+## Streaming Command Architecture
+
+### Essential Commands
+Always available in RAM for core functionality:
+- **System**: `init`, `exit`, `clear`, `help`
+- **Filesystem**: `ls`
+- **Memory Management**: `memory`, `portable`, `load`, `unload`, `status`
+
+### Streaming Commands
+Loaded on-demand to conserve memory:
+- **Filesystem**: `format`, `fdisk`, `fscheck`, `copy`, `move`, `del`, `cd`, `makedir`, `deldir`
+- **File Operations**: `read`, `write`, `read_raw`, `read_md`, `read_image`
+- **Basic Commands**: `echo`, `ver`, `calc`, `search`, `drive`, `run`
+- **Advanced**: `random`, `history`, `sort`, `game`, `draw`, `spam`
+- **Development**: `assemble`, `hexdump`, `log`
+- **Subcommands**: Various specialized command variants
+
+### Command Loading
+```bash
+load            # Load all streaming commands into RAM
+unload          # Unload streaming commands to free memory
+status          # Show which commands are currently loaded
+```
+
+## User Interface
 
 ### Prompt Format
 ```
@@ -40,7 +66,68 @@ RAM:/!         # RAM disk (special drive)
 - **Escape**: Clear current input
 - **Ctrl+C**: Interrupt current operation
 
-## 📋 Built-in Commands
+## Built-in Commands
+
+### System Commands
+
+#### `init`
+Initialize full system services (ATA drives, etc.).
+```bash
+init            # Initialize all system services
+```
+
+#### `exit`
+Exit the shell and return to kernel.
+```bash
+exit            # Exit EYN-OS
+```
+
+#### `clear`
+Clear the screen.
+```bash
+clear           # Clear terminal screen
+```
+
+#### `help`
+Show interactive help system.
+```bash
+help            # Launch TUI help system
+```
+
+### Memory Management
+
+#### `load`
+Load streaming commands into RAM.
+```bash
+load            # Load all streaming commands
+```
+
+#### `unload`
+Unload streaming commands to free memory.
+```bash
+unload          # Free memory by unloading commands
+```
+
+#### `status`
+Show command loading status.
+```bash
+status          # Check which commands are loaded
+```
+
+#### `memory [stats|test|stress]`
+Memory management and testing.
+```bash
+memory stats    # Show memory statistics
+memory test     # Run memory tests
+memory stress   # Stress test memory system
+```
+
+#### `portable [stats|optimize]`
+Display portability optimizations.
+```bash
+portable stats  # Show portability statistics
+portable optimize # Optimize for current system
+```
 
 ### Filesystem Commands
 
@@ -82,9 +169,29 @@ makedir new_dir # Create new directory
 ### File Operations
 
 #### `read <filename>`
-Display file contents (equivalent to `cat`).
+Smart file display - detects file type and displays appropriately.
 ```bash
-read test.txt   # Display test.txt contents
+read test.txt   # Display text file
+read image.rei  # Display REI image
+read doc.md     # Display markdown with formatting
+```
+
+#### `read_raw <filename>`
+Display raw file contents.
+```bash
+read_raw test.bin # Display binary file as text
+```
+
+#### `read_md <filename>`
+Display markdown files with formatting.
+```bash
+read_md doc.md  # Display markdown with bold/italic formatting
+```
+
+#### `read_image <filename>`
+Display REI image files.
+```bash
+read_image logo.rei # Display REI image file
 ```
 
 #### `write <filename>`
@@ -114,6 +221,12 @@ calc 2+2        # Calculate 2+2
 calc 10*5       # Calculate 10*5
 ```
 
+#### `hexdump <filename>`
+Display file contents in hexadecimal.
+```bash
+hexdump file.bin # Show hex dump of file
+```
+
 ### System Commands
 
 #### `drive <number>`
@@ -124,32 +237,26 @@ drive 1         # Switch to drive 1
 drive ram       # Switch to RAM disk
 ```
 
-#### `clear`
-Clear the screen.
+#### `lsata`
+List detected ATA drives.
 ```bash
-clear           # Clear terminal screen
+lsata           # Show all ATA drives
 ```
 
-#### `help [command]`
-Show help information.
+#### `ver`
+Show version information.
 ```bash
-help            # Show all commands
-help ls         # Show help for ls command
-```
-
-#### `history`
-Show command history.
-```bash
-history         # Display recent commands
-```
-
-#### `exit`
-Exit the shell (returns to kernel).
-```bash
-exit            # Exit EYN-OS
+ver             # Display EYN-OS version
 ```
 
 ### Utility Commands
+
+#### `echo <text>`
+Echo text to screen.
+```bash
+echo Hello      # Display "Hello"
+echo "Hello World" # Display "Hello World"
+```
 
 #### `random [max]`
 Generate random number.
@@ -179,6 +286,18 @@ game snake      # Launch snake game
 game snake.dat  # Launch snake game (with extension)
 ```
 
+#### `draw <x> <y> <width> <height> <r> <g> <b>`
+Draw a rectangle.
+```bash
+draw 10 20 100 50 255 0 0  # Draw red rectangle
+```
+
+#### `spam`
+Spam "EYN-OS" 100 times for fun.
+```bash
+spam            # Display EYN-OS 100 times
+```
+
 ### Filesystem Management
 
 #### `format <drive>`
@@ -191,6 +310,38 @@ format 0        # Format drive 0
 Disk partitioning tool.
 ```bash
 fdisk           # Interactive disk partitioning
+```
+
+#### `fscheck`
+Check filesystem integrity.
+```bash
+fscheck         # Check current filesystem
+```
+
+### Error and Debug Commands
+
+#### `error [clear|details]`
+Display system error statistics.
+```bash
+error           # Show error statistics
+error clear     # Clear error counters
+error details   # Show detailed error information
+```
+
+#### `validate [test|stats]`
+Display input validation statistics.
+```bash
+validate        # Show validation statistics
+validate test   # Run validation tests
+validate stats  # Show validation stats
+```
+
+#### `process [list|info|kill]`
+Display process isolation statistics.
+```bash
+process         # Show process statistics
+process list    # List running processes
+process info    # Show process information
 ```
 
 ## Command System
@@ -250,6 +401,7 @@ The `help` command uses the TUI system to display:
 - **Descriptions**: Brief explanation of each command
 - **Usage Examples**: How to use commands
 - **Navigation**: Arrow keys to browse commands
+- **Subcommands**: Expandable sections for command variants
 
 ### Game Integration
 Games launched via the `game` command:
@@ -298,12 +450,34 @@ printf("Error: Unknown command '%s'\n", cmd);
 - **Input Buffering**: Efficient keyboard input handling
 - **Memory Management**: Minimal memory usage
 - **Fast Dispatch**: Quick command lookup and execution
+- **Streaming Architecture**: On-demand command loading
 
 ### Memory Usage
 - **Shell Process**: ~2KB base memory
 - **Command History**: ~1KB per 10 commands
 - **Input Buffer**: 256 bytes
-- **Command Registry**: ~1KB for all commands
+- **Essential Commands**: ~4KB for core commands
+- **Streaming Commands**: Loaded on-demand (~8KB when loaded)
+
+## Release 12 Improvements
+
+### Stability Enhancements
+- **Intelligent Exception Handling**: System attempts recovery instead of halting
+- **Command Safety**: Input validation and argument sanitization
+- **Memory Protection**: Heap corruption detection and validation
+- **Process Isolation**: Memory separation for user programs
+
+### Portability Features
+- **Dynamic Memory Detection**: Automatic RAM detection using multiboot info
+- **Adaptive Heap Sizing**: Conservative memory allocation for low-end systems
+- **Streaming Command System**: On-demand command loading to reduce memory footprint
+- **Optimized File I/O**: Dynamic buffering with efficient memory usage
+
+### User Experience
+- **Professional Help System**: Interactive TUI with dual-pane layout
+- **File Format Support**: REI image rendering and Markdown formatting
+- **Clean Output**: Removed debug messages for professional appearance
+- **Command Consistency**: All registered commands properly included in streaming system
 
 ## Future Enhancements
 
@@ -325,8 +499,9 @@ printf("Error: Unknown command '%s'\n", cmd);
 ### Adding New Commands
 1. **Implement Function**: Create command function
 2. **Register Command**: Use `REGISTER_SHELL_COMMAND` macro
-3. **Add to Help**: Update help system documentation
-4. **Test**: Verify command works correctly
+3. **Add to Streaming System**: Include in streaming commands array
+4. **Add to Help**: Update help system documentation
+5. **Test**: Verify command works correctly
 
 ### Example New Command
 ```c
@@ -340,6 +515,9 @@ void my_cmd(string args) {
 
 // In shell initialization
 REGISTER_SHELL_COMMAND("my_cmd", "My custom command", my_cmd);
+
+// Add to streaming commands array
+{"my_cmd", my_cmd, CMD_STREAMING, "My custom command", "my_cmd arg"},
 ```
 
 ---

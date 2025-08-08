@@ -1,7 +1,7 @@
-#include "../../include/vga.h"
-#include "../../include/multiboot.h"
-#include "../../include/eynfs.h"
-#include "../../include/util.h"
+#include <vga.h>
+#include <multiboot.h>
+#include <eynfs.h>
+#include <util.h>
 #include <stdarg.h>
 #include <stddef.h>
 
@@ -25,23 +25,69 @@ void shell_log_disable() { shell_log_active = 0; }
 
 void shell_log_flush() {
     if (shell_log_pos == 0) return;
+    
+    // Memory safety: limit log file size to prevent excessive allocation
+    if (shell_log_pos > 4096) { // 4KB limit for log files
+        printf("%cWarning: Log buffer too large (%d bytes), truncating to 4KB\n", 255, 165, 0, shell_log_pos);
+        shell_log_pos = 4096;
+    }
+    
     eynfs_superblock_t sb;
-    if (eynfs_read_superblock(0, 2048, &sb) != 0 || sb.magic != EYNFS_MAGIC) return;
+    if (eynfs_read_superblock(0, 2048, &sb) != 0 || sb.magic != EYNFS_MAGIC) {
+        printf("%cWarning: Failed to read filesystem for logging\n", 255, 165, 0);
+        return;
+    }
+    
     eynfs_dir_entry_t entry;
     uint32_t entry_idx;
     if (eynfs_find_in_dir(0, &sb, sb.root_dir_block, "log", &entry, &entry_idx) != 0) {
-        if (eynfs_create_entry(0, &sb, sb.root_dir_block, "log", EYNFS_TYPE_FILE) != 0) return;
-        if (eynfs_find_in_dir(0, &sb, sb.root_dir_block, "log", &entry, &entry_idx) != 0) return;
+        if (eynfs_create_entry(0, &sb, sb.root_dir_block, "log", EYNFS_TYPE_FILE) != 0) {
+            printf("%cWarning: Failed to create log file\n", 255, 165, 0);
+            return;
+        }
+        if (eynfs_find_in_dir(0, &sb, sb.root_dir_block, "log", &entry, &entry_idx) != 0) {
+            printf("%cWarning: Failed to find created log file\n", 255, 165, 0);
+            return;
+        }
     }
+    
     int old_size = entry.size;
-    char* newbuf = (char*)my_malloc(old_size + shell_log_pos);
-    if (!newbuf) return;
+    
+    // Memory safety: limit total allocation size
+    size_t total_size = old_size + shell_log_pos;
+    if (total_size > 8192) { // 8KB limit for log operations
+        printf("%cWarning: Log operation too large (%d bytes), limiting to 8KB\n", 255, 165, 0, total_size);
+        if (old_size > 4096) old_size = 4096;
+        if (shell_log_pos > 4096) shell_log_pos = 4096;
+        total_size = old_size + shell_log_pos;
+    }
+    
+    char* newbuf = (char*)my_malloc(total_size);
+    if (!newbuf) {
+        printf("%cWarning: Out of memory for log operation\n", 255, 165, 0);
+        return;
+    }
+    
     int n = 0;
     if (old_size > 0) n = eynfs_read_file(0, &sb, &entry, newbuf, old_size, 0);
     if (n < 0) n = 0;
-    memory_copy(shell_log_buf, newbuf + n, shell_log_pos);
+    
+    // Bounds check for memory copy
+    if (n + shell_log_pos <= total_size) {
+        memory_copy(shell_log_buf, newbuf + n, shell_log_pos);
+    } else {
+        printf("%cWarning: Log buffer overflow prevented\n", 255, 165, 0);
+        my_free(newbuf);
+        return;
+    }
+    
     int written = eynfs_write_file(0, &sb, &entry, newbuf, n + shell_log_pos, sb.root_dir_block, entry_idx);
     my_free(newbuf);
+    
+    if (written < 0) {
+        printf("%cWarning: Failed to write log file\n", 255, 165, 0);
+    }
+    
     shell_log_pos = 0;
 }
 
@@ -458,4 +504,120 @@ int snprintf(char *str, size_t size, const char *format, ...) {
     str[pos] = '\0';
     va_end(ap);
     return pos;
+}
+
+void vga_set_color(int nr, int ng, int nb) {
+    r = nr;
+    g = ng;
+    b = nb;
+}
+
+// Bold font - just use regular drawText with brighter color for now
+void drawText_bold(int charnum, int r, int g, int b) {
+    // For now, just use regular drawText with brighter color
+    drawText(charnum, r, g, b);
+}
+
+// Italic font - just use regular drawText for now
+void drawText_italic(int charnum, int r, int g, int b) {
+    // For now, just use regular drawText
+    drawText(charnum, r, g, b);
+}
+
+// Large font for headers - enhanced spacing and visual emphasis
+void drawText_large(int charnum, int r, int g, int b) {
+    // Use regular drawText but add extra spacing and visual emphasis
+    drawText(charnum, r, g, b);
+    // Add extra spacing to make headers appear larger
+    width += 2; // Extra spacing between characters
+}
+
+// Markdown rendering function
+void render_markdown(const char* content) {
+    if (!content) return;
+    
+    int in_bold = 0;
+    int in_italic = 0;
+    int in_header = 0;
+    int header_level = 0;
+    int in_code = 0;
+    
+    for (int i = 0; content[i]; i++) {
+        char c = content[i];
+        
+        // Handle newlines
+        if (c == '\n') {
+            printf("\n");
+            in_header = 0;
+            header_level = 0;
+            continue;
+        }
+        
+        // Handle headers (# ## ###)
+        if (c == '#' && (i == 0 || content[i-1] == '\n')) {
+            header_level = 0;
+            while (content[i] == '#') {
+                header_level++;
+                i++;
+            }
+            if (content[i] == ' ') {
+                in_header = 1;
+                // Print header with different color
+                printf("%c", 200, 180, 255); // Soft lavender for headers
+                continue;
+            } else {
+                // Not a header, go back and print normally
+                i -= header_level;
+                c = content[i];
+            }
+        }
+        
+        // Handle bold (**text**)
+        if (c == '*' && content[i+1] == '*') {
+            in_bold = !in_bold;
+            i++; // Skip next *
+            continue;
+        }
+        
+        // Handle italic (*text*)
+        if (c == '*' && content[i+1] != '*') {
+            in_italic = !in_italic;
+            continue;
+        }
+        
+        // Handle code blocks (```)
+        if (c == '`' && content[i+1] == '`' && content[i+2] == '`') {
+            in_code = !in_code;
+            i += 2; // Skip next two `
+            printf("%c", 180, 200, 255); // Soft blue for code blocks
+            continue;
+        }
+        
+        // Handle inline code (`code`)
+        if (c == '`' && content[i+1] != '`') {
+            in_code = !in_code;
+            printf("%c", 180, 180, 255); // Soft blue for inline code
+            continue;
+        }
+        
+        // Print the character with appropriate formatting
+        if (in_header) {
+            // Headers in soft lavender with large font
+            drawText_large(c, 210, 170, 255);
+        } else if (in_bold) {
+            // Bold text in soft pink
+            drawText(c, 255, 180, 180);
+        } else if (in_italic) {
+            // Italic text in soft gray
+            drawText(c, 170, 170, 190);
+        } else if (in_code) {
+            // Code text in soft blue
+            drawText(c, 180, 180, 255);
+        } else {
+            // Regular text in soft white
+            drawText(c, 245, 245, 250);
+        }
+    }
+    
+    printf("\n");
 }

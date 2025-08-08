@@ -1,9 +1,37 @@
-#include "../../include/isr.h"
-#include "../../include/vga.h"
-#include "../../include/idt.h"
-#include "../../include/multiboot.h"
+#include <isr.h>
+#include <vga.h>
+#include <idt.h>
+#include <multiboot.h>
+#include <shell.h>
+#include <util.h>
+#include <string.h>
 
 extern multiboot_info_t *g_mbi;
+
+// Global error tracking
+static volatile int system_error_count = 0;
+static volatile int last_error_code = 0;
+static volatile uint32 last_error_eip = 0;
+
+// Error severity levels
+#define ERROR_FATAL 0
+#define ERROR_RECOVERABLE 1
+#define ERROR_WARNING 2
+
+// Error context structure
+typedef struct {
+    int error_code;
+    uint32 eip;
+    uint32 eflags;
+    uint32 esp;
+    int severity;
+} error_context_t;
+
+// Forward declarations
+static void handle_error(int isr_num, error_context_t* ctx);
+static int is_recoverable_error(int isr_num);
+static void log_error(int isr_num, error_context_t* ctx);
+static void attempt_recovery(error_context_t* ctx);
 
 extern void isr_install() 
 {
@@ -39,178 +67,230 @@ extern void isr_install()
     set_idt_gate(29, (uint32)isr29);
     set_idt_gate(30, (uint32)isr30);
     set_idt_gate(31, (uint32)isr31);
+    
+    // Set up syscall handler (interrupt 0x80) to the assembly stub
+    extern void syscall_entry();
+    set_idt_gate(0x80, (uint32)syscall_entry);
 
     set_idt(); // Load with ASM
 }
 
-/*Handlers*/
-void isr0()
-{
-    printf(exception_messages[0]);
-    asm("hlt");    
+// Generic ISR handler that captures context and attempts recovery
+static void generic_isr_handler(int isr_num) {
+    error_context_t ctx;
+    ctx.error_code = isr_num;
+    ctx.eip = 0; // Will be set by assembly wrapper
+    ctx.eflags = 0;
+    ctx.esp = 0;
+    
+    // Determine error severity
+    if (is_recoverable_error(isr_num)) {
+        ctx.severity = ERROR_RECOVERABLE;
+    } else if (isr_num == 0 || isr_num == 6 || isr_num == 8 || isr_num == 13 || isr_num == 14) {
+        ctx.severity = ERROR_FATAL;
+    } else {
+        ctx.severity = ERROR_WARNING;
+    }
+    
+    // Log the error
+    log_error(isr_num, &ctx);
+    
+    // Handle based on severity
+    handle_error(isr_num, &ctx);
 }
-void isr1()
-{
-    printf(exception_messages[1]);    
-    asm("hlt");
+
+// Determine if an error is potentially recoverable
+static int is_recoverable_error(int isr_num) {
+    // Most errors are recoverable except critical ones
+    switch (isr_num) {
+        case 0:  // Division by zero - can be recovered
+        case 1:  // Debug - recoverable
+        case 3:  // Breakpoint - recoverable
+        case 4:  // Overflow - recoverable
+        case 5:  // Bounds - recoverable
+        case 7:  // No coprocessor - recoverable
+        case 9:  // Coprocessor segment overrun - recoverable
+        case 10: // Bad TSS - recoverable
+        case 11: // Segment not present - recoverable
+        case 12: // Stack fault - recoverable
+        case 15: // Unknown interrupt - recoverable
+        case 16: // Coprocessor fault - recoverable
+        case 17: // Alignment check - recoverable
+        case 18: // Machine check - recoverable
+            return 1;
+        case 6:  // Invalid opcode - potentially fatal
+        case 8:  // Double fault - fatal
+        case 13: // General protection fault - potentially fatal
+        case 14: // Page fault - potentially fatal
+            return 0;
+        default:
+            return 1;
+    }
 }
-void isr2()
-{
-    printf(exception_messages[2]);    
-    asm("hlt");
+
+// Log error with context
+static void log_error(int isr_num, error_context_t* ctx) {
+    system_error_count++;
+    last_error_code = isr_num;
+    last_error_eip = ctx->eip;
+    
+    printf("%c[ERROR] %s (ISR %d) at 0x%X\n", 255, 0, 0, 
+           exception_messages[isr_num], isr_num, ctx->eip);
+    
+    if (ctx->severity == ERROR_FATAL) {
+        printf("%c[FATAL] System may be unstable\n", 255, 0, 0);
+    } else if (ctx->severity == ERROR_RECOVERABLE) {
+        printf("%c[RECOVERABLE] Attempting to continue...\n", 255, 165, 0);
+    } else {
+        printf("%c[WARNING] Non-critical error\n", 255, 255, 0);
+    }
 }
-void isr3()
-{
-    printf(exception_messages[3]);    
-    asm("hlt");
+
+// Attempt recovery based on error type
+static void attempt_recovery(error_context_t* ctx) {
+    switch (ctx->error_code) {
+        case 0: // Division by zero
+            // Set result to 0 and continue
+            printf("%c[RECOVERY] Division by zero handled\n", 0, 255, 0);
+            break;
+        case 1: // Debug
+            printf("%c[RECOVERY] Debug exception handled\n", 0, 255, 0);
+            break;
+        case 3: // Breakpoint
+            printf("%c[RECOVERY] Breakpoint handled\n", 0, 255, 0);
+            break;
+        case 4: // Overflow
+            printf("%c[RECOVERY] Overflow handled\n", 0, 255, 0);
+            break;
+        case 5: // Bounds
+            printf("%c[RECOVERY] Bounds check handled\n", 0, 255, 0);
+            break;
+        default:
+            printf("%c[RECOVERY] Generic error recovery\n", 0, 255, 0);
+            break;
+    }
 }
-void isr4()
-{
-    printf(exception_messages[4]);    
-    asm("hlt");
+
+// Handle error based on severity
+static void handle_error(int isr_num, error_context_t* ctx) {
+    switch (ctx->severity) {
+        case ERROR_FATAL:
+            printf("%c[FATAL] Critical error - system halt\n", 255, 0, 0);
+            printf("%cError count: %d\n", 255, 255, 255, system_error_count);
+            asm("hlt");
+            break;
+            
+        case ERROR_RECOVERABLE:
+            attempt_recovery(ctx);
+            // Return to shell instead of halting
+            printf("%c[RECOVERY] Returning to shell...\n", 0, 255, 0);
+            // Clear any pending interrupts
+            asm("cli");
+            asm("sti");
+            break;
+            
+        case ERROR_WARNING:
+            printf("%c[WARNING] Non-critical error - continuing\n", 255, 255, 0);
+            break;
+    }
 }
-void isr5()
-{
-    printf(exception_messages[5]);    
-    asm("hlt");
+
+// Individual ISR handlers - now use intelligent recovery
+void isr0() { generic_isr_handler(0); }
+void isr1() { generic_isr_handler(1); }
+void isr2() { generic_isr_handler(2); }
+void isr3() { generic_isr_handler(3); }
+void isr4() { generic_isr_handler(4); }
+void isr5() { generic_isr_handler(5); }
+void isr6() { generic_isr_handler(6); }
+void isr7() { generic_isr_handler(7); }
+void isr8() { generic_isr_handler(8); }
+void isr9() { generic_isr_handler(9); }
+void isr10() { generic_isr_handler(10); }
+void isr11() { generic_isr_handler(11); }
+void isr12() { generic_isr_handler(12); }
+void isr13() { generic_isr_handler(13); }
+void isr14() { generic_isr_handler(14); }
+void isr15() { generic_isr_handler(15); }
+void isr16() { generic_isr_handler(16); }
+void isr17() { generic_isr_handler(17); }
+void isr18() { generic_isr_handler(18); }
+void isr19() { generic_isr_handler(19); }
+void isr20() { generic_isr_handler(20); }
+void isr21() { generic_isr_handler(21); }
+void isr22() { generic_isr_handler(22); }
+void isr23() { generic_isr_handler(23); }
+void isr24() { generic_isr_handler(24); }
+void isr25() { generic_isr_handler(25); }
+void isr26() { generic_isr_handler(26); }
+void isr27() { generic_isr_handler(27); }
+void isr28() { generic_isr_handler(28); }
+void isr29() { generic_isr_handler(29); }
+void isr30() { generic_isr_handler(30); }
+void isr31() { generic_isr_handler(31); }
+
+// Error status functions for shell commands
+int get_system_error_count() {
+    return system_error_count;
 }
-void isr6()
-{
-    printf(exception_messages[6]);    
-    asm("hlt");
+
+int get_last_error_code() {
+    return last_error_code;
 }
-void isr7()
-{
-    printf(exception_messages[7]);    
-    asm("hlt");
+
+uint32 get_last_error_eip() {
+    return last_error_eip;
 }
-void isr8()
-{
-    printf(exception_messages[8]);    
-    asm("hlt");
-}
-void isr9()
-{
-    printf(exception_messages[9]);    
-    asm("hlt");
-}
-void isr10()
-{
-    printf(exception_messages[10]);    
-    asm("hlt");
-}
-void isr11()
-{
-    printf(exception_messages[11]);    
-    asm("hlt");
-}
-void isr12()
-{
-    printf(exception_messages[12]);    
-    asm("hlt");
-}
-void isr13()
-{
-    printf(exception_messages[13]);    
-    asm("hlt");
-}
-void isr14()
-{
-    printf(exception_messages[14]);    
-    asm("hlt");
-}
-void isr15()
-{
-    printf(exception_messages[15]);    
-    asm("hlt");
-}
-void isr16()
-{
-    printf(exception_messages[16]);    
-    asm("hlt");
-}
-void isr17()
-{
-    printf(exception_messages[17]);    
-    asm("hlt");
-}
-void isr18()
-{
-    printf(exception_messages[18]);    
-    asm("hlt");
-}
-void isr19()
-{
-    printf(exception_messages[19]);    
-    asm("hlt");
-}
-void isr20()
-{
-    printf(exception_messages[20]);    
-    asm("hlt");
-}
-void isr21()
-{
-    printf(exception_messages[21]);    
-    asm("hlt");
-}
-void isr22()
-{
-    printf(exception_messages[22]);    
-    asm("hlt");
-}
-void isr23()
-{
-    printf(exception_messages[23]);    
-    asm("hlt");
-}
-void isr24()
-{
-    printf(exception_messages[24]);    
-    asm("hlt");
-}
-void isr25()
-{
-    printf(exception_messages[25]);    
-    asm("hlt");
-}
-void isr26()
-{
-    printf(exception_messages[26]);    
-    asm("hlt");
-}
-void isr27()
-{
-    printf(exception_messages[27]);    
-    asm("hlt");
-}
-void isr28()
-{
-    printf(exception_messages[28]);    
-    asm("hlt");
-}
-void isr29()
-{
-    printf(exception_messages[29]);    
-    asm("hlt");
-}
-void isr30()
-{
-    printf(exception_messages[30]);    
-    asm("hlt");
-}
-void isr31()
-{
-    printf(exception_messages[31]);    
-    asm("hlt");
+
+// Syscall numbers
+#define SYSCALL_WRITE 1
+#define SYSCALL_EXIT  2
+#define SYSCALL_READ  3
+#define SYSCALL_OPEN  4
+#define SYSCALL_CLOSE 5
+
+// C dispatcher called by the assembly stub. Returns value in EAX to user.
+uint32 syscall_dispatch(regs_t* r) {
+    uint32 syscall_num = r->eax;
+    uint32 arg1 = r->ebx;
+    uint32 arg2 = r->ecx;
+    uint32 arg3 = r->edx;
+
+    switch (syscall_num) {
+        case SYSCALL_WRITE: {
+            if (arg1 == 1) {
+                char* buffer = (char*)arg2;
+                int len = (int)arg3;
+                for (int i = 0; i < len; i++) {
+                    printf("%c", buffer[i]);
+                }
+                r->eax = (uint32)len; // return bytes written
+            } else {
+                r->eax = (uint32)-1;
+            }
+            break;
+        }
+        case SYSCALL_READ: {
+            r->eax = 0; // no input yet
+            break;
+        }
+        case SYSCALL_EXIT: {
+            printf("%c[SYSCALL] Program exited with code %d\n", 0, 255, 0, arg1);
+            r->eax = 0;
+            break;
+        }
+        default: {
+            printf("%c[SYSCALL] Unknown syscall: %d\n", 255, 0, 0, syscall_num);
+            r->eax = (uint32)-1;
+            break;
+        }
+    }
+
+    return r->eax;
 }
 
 
-/*End Handlers*/
-
-
-
-/* To printf the message which defines every exception */
+/*To printf the message which defines every exception */
 string exception_messages[] = {
     "Division By Zero",
     "Debug",
@@ -248,3 +328,4 @@ string exception_messages[] = {
     "Reserved",
     "Reserved"
 };
+

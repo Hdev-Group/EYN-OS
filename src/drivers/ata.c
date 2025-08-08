@@ -1,6 +1,6 @@
-#include "../../include/types.h"
-#include "../../include/system.h"
-#include "../../include/vga.h"
+#include <types.h>
+#include <system.h>
+#include <vga.h>
 
 #define ATA_PRIMARY_IO 0x1F0
 #define ATA_SECONDARY_IO 0x170

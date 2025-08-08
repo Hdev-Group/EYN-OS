@@ -1,12 +1,12 @@
-#include "../../../include/game_engine.h"
-#include "../../../include/vga.h"
-#include "../../../include/util.h"
-#include "../../../include/string.h"
-#include "../../../include/eynfs.h"
-#include "../../../include/system.h"
-#include "../../../include/kb.h"
-#include "../../../include/tui.h"
-#include "../../../include/math.h"
+#include <game_engine.h>
+#include <vga.h>
+#include <util.h>
+#include <string.h>
+#include <eynfs.h>
+#include <system.h>
+#include <kb.h>
+#include <tui.h>
+#include <math.h>
 #include <stdint.h>
 
 // Global variables
@@ -794,13 +794,13 @@ void game_draw_board(game_state_t* state) {
     if (state->game_over) {
         tui_style_t game_over_style = {TUI_COLOR_RED, TUI_COLOR_BLACK, 0};
         char game_over_text[64];
-        snprintf(game_over_text, sizeof(game_over_text), "GAME OVER! Final Score: %d", state->score);
+        snprintf(game_over_text, sizeof(game_over_text), "GAME OVER! Final Score: %d\n\n", state->score);
         int game_over_x = (screen_width - strlen(game_over_text)) / 2;
         tui_draw_text(game_over_x, screen_height - 4, game_over_text, game_over_style);
     } else if (state->won) {
         tui_style_t win_style = {TUI_COLOR_MAGENTA, TUI_COLOR_BLACK, 0};
         char win_text[64];
-        snprintf(win_text, sizeof(win_text), "YOU WIN! Final Score: %d", state->score);
+        snprintf(win_text, sizeof(win_text), "YOU WIN! Final Score: %d\n\n", state->score);
         int win_x = (screen_width - strlen(win_text)) / 2;
         tui_draw_text(win_x, screen_height - 4, win_text, win_style);
     }

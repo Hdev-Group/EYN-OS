@@ -1,8 +1,8 @@
-#include "../../include/kb.h"
-#include "../../include/system.h"
-#include "../../include/vga.h"
-#include "../../include/multiboot.h"
-#include "../../include/util.h"
+#include <kb.h>
+#include <system.h>
+#include <vga.h>
+#include <multiboot.h>
+#include <util.h>
 #include <stdlib.h>
 
 extern multiboot_info_t *g_mbi;
@@ -57,7 +57,8 @@ string readStr() {
                 buffstr[0] = '\0';  // Clear the buffer
                 reading = 0;        // Exit the reading loop
                 printf("%c^C\n", 255, 255, 255);  // Print ^C in white
-                continue;
+                my_free(buffstr);   // Clean up memory
+                return buffstr;
             }
             
             // Determine if we should use uppercase (shift XOR caps lock)
@@ -609,7 +610,11 @@ string readStr() {
             }
         }
     }
-    buffstr[i] = 0;  // Remove the i-1 to keep the last character
+    
+    // Ensure null termination
+    buffstr[i] = '\0';
+    
+    // Return the buffer (caller is responsible for freeing)
     return buffstr;
 }
 

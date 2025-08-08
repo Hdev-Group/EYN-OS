@@ -42,4 +42,31 @@ extern string exception_messages[32];
 
 extern void isr_install();
 
+// Error tracking functions
+int get_system_error_count();
+int get_last_error_code();
+uint32 get_last_error_eip();
+
+// Register state as laid out by syscall ISR stub (starting at saved EDI)
+typedef struct regs_t {
+    uint32 edi;
+    uint32 esi;
+    uint32 ebp;
+    uint32 esp;      // value prior to pusha (not current ESP)
+    uint32 ebx;
+    uint32 edx;
+    uint32 ecx;
+    uint32 eax;
+    uint32 int_no;
+    uint32 err_code;
+    uint32 eip;
+    uint32 cs;
+    uint32 eflags;
+    uint32 useresp;  // present only if switching rings
+    uint32 ss;       // present only if switching rings
+} regs_t;
+
+// Syscall C dispatcher
+uint32 syscall_dispatch(regs_t* r);
+
 #endif

@@ -1,14 +1,14 @@
-#include "../../../include/write_editor.h"
-#include "../../../include/types.h"
-#include "../../../include/eynfs.h"
-#include "../../../include/fat32.h"
-#include "../../../include/vga.h"
-#include "../../../include/system.h"
-#include "../../../include/string.h"
-#include "../../../include/util.h"
+#include <write_editor.h>
+#include <types.h>
+#include <eynfs.h>
+#include <fat32.h>
+#include <vga.h>
+#include <system.h>
+#include <string.h>
+#include <util.h>
 #include <stdint.h>
 #include <string.h>
-#include "../../../include/tui.h"
+#include <tui.h>
 #define EYNFS_SUPERBLOCK_LBA 2048
 extern void* fat32_disk_img;
 
@@ -45,7 +45,8 @@ int load_file_to_write_editor(const char* path, uint8 disk) {
     if (eynfs_read_superblock(disk, EYNFS_SUPERBLOCK_LBA, &sb) == 0 && sb.magic == EYNFS_MAGIC) {
         eynfs_dir_entry_t entry;
         if (eynfs_traverse_path(disk, &sb, path, &entry, NULL, NULL) == 0 && entry.type == EYNFS_TYPE_FILE) {
-            const int chunk_size = EYNFS_BLOCK_SIZE;
+            // Use ultra-small buffer for low-memory systems
+            const int chunk_size = 128; // Much smaller than EYNFS_BLOCK_SIZE
             uint32_t bytes_left = entry.size;
             uint32_t offset = 0;
             char buf[chunk_size + 1];
@@ -134,17 +135,13 @@ int load_file_to_write_editor(const char* path, uint8 disk) {
                                 line++;
                             }
                             write_editor_num_lines = line > 0 ? line : 1;
+                            return 0;
                         }
                         return 0;
                     }
                 }
             }
-            uint32 fat_sector = rsvd_sec_cnt + ((cluster * 4) / 512);
-            if (ata_read_sector(disk, fat_sector, fat) != 0) break;
-            uint32* fat32 = (uint32*)fat;
-            uint32 fat_index = (cluster % (512 / 4));
-            uint32 next_cluster = fat32[fat_index] & 0x0FFFFFFF;
-            cluster = next_cluster;
+            cluster = fat32_next_cluster(fat32_disk_img, &bpb, cluster);
         }
     }
     return 0;
@@ -446,10 +443,10 @@ void write_editor(const char* filename, uint8 disk) {
                 if (save_write_editor_buffer(filename, disk) == 0) {
                     printf("%cFile saved successfully!\n", 0, 255, 0);
                     write_editor_modified = 0;
-                    sleep(100);
+                    sleep(10);
                 } else {
                     printf("%cFailed to save file!\n", 255, 0, 0);
-                    sleep(1000);
+                    sleep(100);
                 }
                 break;
             case 0x2002:

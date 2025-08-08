@@ -6,7 +6,7 @@ A quick reference guide for EYN-OS commands, features, and common operations.
 
 ### Boot Process
 1. **GRUB Menu**: Select EYN-OS from boot menu
-2. **Kernel Load**: System initializes drivers and filesystem
+2. **Kernel Load**: System initializes drivers and filesystem with dynamic memory detection
 3. **Shell Ready**: Command prompt appears: `0:/!`
 
 ### Basic Navigation
@@ -18,6 +18,29 @@ cd /            # Go to root directory
 clear           # Clear screen
 ```
 
+## Streaming Command System
+
+### Essential Commands (Always Available)
+```bash
+init            # Initialize full system services
+ls              # List directory contents
+exit            # Exit EYN-OS
+clear           # Clear screen
+help            # Show interactive help
+memory          # Memory management
+portable        # Portability information
+load            # Load streaming commands
+unload          # Unload streaming commands
+status          # Show command loading status
+```
+
+### Loading Streaming Commands
+```bash
+load            # Load all streaming commands into RAM
+unload          # Unload commands to free memory
+status          # Check which commands are loaded
+```
+
 ## Filesystem Commands
 
 | Command | Description | Example |
@@ -27,22 +50,27 @@ clear           # Clear screen
 | `del` | Delete file | `del test.txt` |
 | `deldir` | Delete directory | `deldir old_dir` |
 | `makedir` | Create directory | `makedir new_dir` |
-| `read` | Display file contents | `read config.txt` |
+| `read` | Smart file display | `read config.txt` |
+| `read_raw` | Raw file display | `read_raw data.bin` |
+| `read_md` | Markdown display | `read_md doc.md` |
+| `read_image` | Image display | `read_image logo.rei` |
 | `write` | Edit file | `write document.txt` |
 | `copy` | Copy file | `copy source.txt dest.txt` |
 | `move` | Move file | `move file.txt /backup/` |
+| `format` | Format drive | `format 0` |
+| `fdisk` | Disk partitioning | `fdisk` |
+| `fscheck` | Check filesystem | `fscheck` |
 
 ## System Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `drive` | Switch disk drive | `drive 1` |
-| `format` | Format drive | `format 0` |
-| `fdisk` | Disk partitioning | `fdisk` |
-| `help` | Show help | `help ls` |
+| `lsata` | List ATA drives | `lsata` |
+| `ver` | Show version | `ver` |
+| `help` | Show help | `help` |
 | `history` | Show command history | `history` |
 | `exit` | Exit EYN-OS | `exit` |
-
 
 ## Development Tools
 
@@ -51,6 +79,7 @@ clear           # Clear screen
 | `assemble` | Assemble code | `assemble test.asm test.eyn` |
 | `run` | Execute program | `run program.eyn` |
 | `calc` | Calculator | `calc 2+2` |
+| `hexdump` | Hex dump | `hexdump file.bin` |
 
 ## Games & Applications
 
@@ -58,14 +87,25 @@ clear           # Clear screen
 |---------|-------------|---------|
 | `game` | Launch game | `game snake` |
 | `write` | Text editor | `write file.txt` |
+| `draw` | Draw rectangle | `draw 10 20 100 50 255 0 0` |
 
 ## Utility Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| `echo` | Echo text | `echo Hello` |
 | `random` | Generate random number | `random 100` |
 | `sort` | Sort file lines | `sort data.txt` |
 | `search` | Search files | `search "text"` |
+| `spam` | Spam EYN-OS | `spam` |
+
+## Error and Debug Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `error` | Error statistics | `error` |
+| `validate` | Validation stats | `validate` |
+| `process` | Process info | `process` |
 
 ## File Operations
 
@@ -76,7 +116,10 @@ write newfile.txt    # Create and edit file
 
 ### Reading Files
 ```bash
-read filename.txt    # Display file contents
+read filename.txt    # Smart file display
+read_raw data.bin   # Raw file display
+read_md doc.md      # Markdown with formatting
+read_image logo.rei # REI image display
 ```
 
 ### Copying Files
@@ -95,6 +138,43 @@ move old.txt new.txt       # Rename file
 ```bash
 del filename.txt     # Delete file
 deldir directory     # Delete directory
+```
+
+## Image Handling
+
+### REI Image Format
+EYN-OS supports the custom REI (Raw EYN Image) format for pixel-perfect image display.
+
+```bash
+read image.rei              # Display REI image
+read_image image.rei        # Direct image subcommand
+```
+
+### Supported Formats
+- **REI** (`.rei`) - Native EYN-OS format with pixel-perfect rendering
+- **PNG** (`.png`) - Placeholder support (conversion recommended)
+- **JPEG** (`.jpg`, `.jpeg`) - Placeholder support (conversion recommended)
+
+### Converting Images
+Use the conversion tool to create REI files:
+```bash
+python3 devtools/png_to_rei.py image.png -o image.rei
+python3 devtools/png_to_rei.py --test -o test.rei
+```
+
+## Memory Management
+
+### Checking Memory Status
+```bash
+memory stats    # Show memory statistics
+memory test     # Run memory tests
+memory stress   # Stress test memory
+```
+
+### Portability Information
+```bash
+portable stats  # Show portability statistics
+portable optimize # Optimize for current system
 ```
 
 ## Common Tasks
@@ -117,13 +197,12 @@ copy important.txt backup/important.txt  # Backup file
 
 ### System Maintenance
 ```bash
-sysinfo              # Check system status
+init                 # Initialize full system services
 drive 0              # Switch to main drive
 ls                   # Check filesystem
 format 1             # Format secondary drive
+fscheck              # Check filesystem integrity
 ```
-
-
 
 ## Keyboard Shortcuts
 
@@ -171,27 +250,40 @@ format 1             # Format secondary drive
 - Use `cd` to navigate to correct directory
 
 **"Unknown command"**
+- Use `load` to load streaming commands
 - Use `help` to see available commands
 - Check command spelling
 - Use `history` to see previous commands
 
 **"Memory allocation failed"**
 - System running low on memory
-- Use `sysinfo` to check memory status
+- Use `unload` to free command memory
+- Use `memory stats` to check memory status
 - Restart system if necessary
+
+**"Command not found"**
+- Command may be in streaming system
+- Use `load` to load all commands
+- Use `status` to check loaded commands
 
 ### Getting Help
 ```bash
-help                # Show all commands
-help <command>      # Show help for specific command
+help                # Show interactive help system
+load                # Load all streaming commands
+status              # Check command loading status
 ```
 
 ## System Information
 
 ### Memory Layout
 - **Kernel**: 0x00100000 - 0x001FFFFF
-- **Available**: 0x00200000 - 0x00FFFFFF
-- **High Memory**: 0x01000000+ (if available)
+- **Available**: 0x00200000 - 0x007FFFFF (adaptive heap)
+- **High Memory**: 0x00800000+ (if available)
+
+### Memory Requirements
+- **Minimum**: 16MB RAM (with optimizations)
+- **Recommended**: 32MB+ RAM
+- **Optimal**: 64MB+ RAM
 
 ### Filesystem
 - **EYNFS**: Native filesystem
@@ -207,6 +299,12 @@ help <command>      # Show help for specific command
 
 ## Advanced Features
 
+### Streaming Command System
+- **Essential Commands**: Always available in RAM
+- **Streaming Commands**: Loaded on-demand to conserve memory
+- **Dynamic Loading**: Use `load`/`unload` to manage memory usage
+- **Status Tracking**: Use `status` to see loaded commands
+
 ### Command History
 - **Navigation**: Arrow keys to browse history
 - **Search**: Quick access to previous commands
@@ -216,12 +314,30 @@ help <command>      # Show help for specific command
 - **Consistent Interface**: All TUI apps use same framework
 - **Color Support**: Multiple colors for different elements
 - **Keyboard Handling**: Unified input processing
+- **Dual-Pane Layout**: Interactive help system
 
-### Game Engine
-- **Modular Design**: Easy to add new games
-- **Data Files**: Games stored as `.txt` files
-- **TUI Integration**: Games use TUI framework
+### File Format Support
+- **Smart File Display**: `read` detects file type automatically
+- **REI Images**: Native image format with pixel-perfect rendering
+- **Markdown**: Formatted text display with bold/italic support
+- **Raw Data**: Binary file display with hex dump support
 
+## Release 12 Features
 
+### Stability Improvements
+- **Intelligent Exception Handling**: System attempts recovery instead of halting
+- **Memory Corruption Detection**: Advanced heap validation and error reporting
+- **Command Safety**: Input validation and argument sanitization
+- **Process Isolation**: Memory separation for user programs
 
----
+### Portability Enhancements
+- **Dynamic Memory Detection**: Automatic RAM detection using multiboot info
+- **Adaptive Heap Sizing**: Conservative memory allocation for low-end systems
+- **Streaming Command System**: On-demand command loading to reduce memory footprint
+- **Optimized File I/O**: Dynamic buffering with efficient memory usage
+
+### User Experience
+- **Professional Help System**: Interactive TUI with dual-pane layout
+- **File Format Support**: REI image rendering and Markdown formatting
+- **Clean Output**: Removed debug messages for professional appearance
+- **Command Consistency**: All registered commands properly included in streaming system

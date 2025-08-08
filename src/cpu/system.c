@@ -1,7 +1,7 @@
-#include "../../include/types.h"
+#include <types.h>
 #include <stdint.h>
 #include <stddef.h>
-#include "../../include/util.h" // for g_user_interrupt
+#include <util.h> // for g_user_interrupt
 
 
 

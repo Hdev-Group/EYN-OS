@@ -14,7 +14,9 @@ typedef struct {
 
 // Function declarations
 void launch_shell(int n);
-void handle_shell_command(const char* cmd, int n);
+void handle_shell_command(string input);
+int get_command_execution_errors();
+string get_last_failed_command();
 string readStr_with_history(command_history_t* history);
 void add_to_history(command_history_t* history, const char* command);
 void clear_history(command_history_t* history);

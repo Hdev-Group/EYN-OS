@@ -21,7 +21,6 @@ int strncmp(const char *s1, const char *s2, size_t n);
 char *strncpy(char *dest, const char *src, size_t n);
 char *strtok_r(char *str, const char *delim, char **saveptr);
 
-// Prototypes for custom kernel string/memory functions
 size_t strspn(const char *s, const char *accept);
 char *strpbrk(const char *s, const char *accept);
 size_t strlen(const char *s);
@@ -37,5 +36,13 @@ char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
 int strcmp(const char *s1, const char *s2);
 char* strncat(char* dest, const char* src, unsigned int n);
+
+// Input validation and buffer overflow protection
+int validate_string(const char* str, int max_length);
+char* safe_strcpy(char* dest, const char* src, int dest_size);
+char* safe_strcat(char* dest, const char* src, int dest_size);
+int validate_file_path(const char* path);
+char* sanitize_input(char* input, int max_length);
+int get_input_validation_errors();
 
 #endif
