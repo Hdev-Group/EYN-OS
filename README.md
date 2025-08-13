@@ -1,4 +1,4 @@
-# EYN-OS - A Freestanding x86 Operating System
+# EYN-OS - A public domain x86 Operating System
 
 EYN-OS is a complete operating system built from scratch with the philosophy of "reinventing the wheel" - understanding and implementing every component of the system. It features a custom filesystem, built-in development tools, games, and a comprehensive user interface with advanced stability and portability features.
 
