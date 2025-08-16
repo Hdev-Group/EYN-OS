@@ -172,7 +172,7 @@ void example_cmd(string arg) {
 1. Test your changes thoroughly
 2. Ensure your command follows the style guidelines
 3. Update documentation if needed
-4. Provide a clear description of what your command does
+4. Submit a pull request
 
 ## Development Tips
 
