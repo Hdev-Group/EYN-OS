@@ -276,3 +276,4 @@ EYN-OS is public domain software. See the UNLICENSE file for details.
 ---
 
 *By Kian Gentry*
+*musinks@proton.me*
