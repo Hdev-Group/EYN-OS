@@ -31,25 +31,25 @@ Create a new file in `src/utilities/shell/` or add to an existing file:
 #include <vga.h>
 #include <string.h>
 
-void my_command_handler(string arg) {
+void custom_command_handler(string arg) {
     // Parse arguments
     uint8 i = 0;
     while (arg[i] && arg[i] != ' ') i++;
     while (arg[i] && arg[i] == ' ') i++;
     
     if (!arg[i]) {
-        printf("%cUsage: my_command <argument>\n", 255, 255, 255);
+        printf("%cUsage: custom_command <argument>\n", 255, 255, 255);
         return;
     }
     
     // Your command logic here
-    printf("%cExecuting my_command with: %s\n", 0, 255, 0, arg + i);
+    printf("%cExecuting custom_command with: %s\n", 0, 255, 0, arg + i);
 }
 
 // Register the command
-REGISTER_SHELL_COMMAND(my_command, "my_command", my_command_handler, CMD_STREAMING, 
-    "My custom command that does something useful.\nUsage: my_command <argument>", 
-    "my_command example");
+REGISTER_SHELL_COMMAND(custom_command, "custom_command", custom_command_handler, CMD_STREAMING, 
+    "My custom command that does something useful.\nUsage: custom_command <argument>", 
+    "custom_command example");
 ```
 
 ### 2. Add to Makefile (if new file)
@@ -80,7 +80,7 @@ Your command will automatically appear in the help system and be available in th
 ### C Code
 - Use `uint8`, `uint32`, etc. from `types.h` instead of standard types
 - Include headers with `#include <header.h>` (not relative paths)
-- Functions should have descriptive names: `my_command_handler()`
+- Functions should have descriptive names: `custom_command_handler()`
 - Use `printf("%c", r, g, b, ...)` for colored output
 - Keep functions focused and under 100 lines when possible
 

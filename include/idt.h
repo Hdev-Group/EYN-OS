@@ -25,6 +25,7 @@ idt_register_t idt_reg;
 
 /* Functions implemented in idt.c */
 extern void set_idt_gate(int n, uint32 handler);
+extern void set_syscall_gate(int n, uint32 handler);
 extern void set_idt();
 
 #endif

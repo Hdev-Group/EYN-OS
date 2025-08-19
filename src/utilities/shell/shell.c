@@ -22,9 +22,19 @@
 #include <tui.h>
 #include <shell_command_info.h>
 
+// Circular buffer variables for logging
+extern int shell_log_current_line_start;
+extern int shell_log_line_count;
+extern int shell_log_line_starts[1001];
+
 #define LOG_BUF_SIZE 1024
 
 extern int shell_log_active;
+
+// Command hash table for O(1) lookups
+#define COMMAND_HASH_SIZE 128
+static shell_cmd_handler_t g_command_hash_table[COMMAND_HASH_SIZE];
+static int g_command_hash_initialized = 0;
 
 void __stack_chk_fail_local() {
     return;
@@ -178,12 +188,67 @@ static void unload_streaming_commands() {
     printf("%cCommands are always loaded in unified system\n", 255, 165, 0);
 }
 
-// Unified command lookup from linker section
-static shell_cmd_handler_t find_command(const char* name) {
-    // Calculate the number of commands in the linker section
-    size_t num_commands = (__stop_shellcmds - __start_shellcmds);
+// Hash function for command names
+static uint32_t command_hash(const char* name) {
+    uint32_t hash = 5381;
+    int c;
+    while ((c = *name++)) {
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    }
+    return hash % COMMAND_HASH_SIZE;
+}
+
+// Initialize command hash table
+static void init_command_hash_table() {
+    if (g_command_hash_initialized) return;
     
-    // Search through all registered commands
+    // Clear hash table
+    for (int i = 0; i < COMMAND_HASH_SIZE; i++) {
+        g_command_hash_table[i] = NULL;
+    }
+    
+    // Build hash table from all registered commands
+    size_t num_commands = (__stop_shellcmds - __start_shellcmds);
+    for (size_t i = 0; i < num_commands; i++) {
+        const shell_command_info_t* cmd = &__start_shellcmds[i];
+        uint32_t hash = command_hash(cmd->name);
+        
+        // Simple linear probing for collisions
+        while (g_command_hash_table[hash] != NULL) {
+            hash = (hash + 1) % COMMAND_HASH_SIZE;
+        }
+        g_command_hash_table[hash] = cmd->handler;
+    }
+    
+    g_command_hash_initialized = 1;
+}
+
+// Unified command lookup from linker section with O(1) hash optimization
+static shell_cmd_handler_t find_command(const char* name) {
+    // Initialize hash table on first use
+    init_command_hash_table();
+    
+    // Try O(1) hash lookup first
+    uint32_t hash = command_hash(name);
+    uint32_t original_hash = hash;
+    
+    // Linear probing for collisions
+    do {
+        if (g_command_hash_table[hash] != NULL) {
+            // Verify this is the correct command by checking the original command list
+            size_t num_commands = (__stop_shellcmds - __start_shellcmds);
+            for (size_t i = 0; i < num_commands; i++) {
+                const shell_command_info_t* cmd = &__start_shellcmds[i];
+                if (strcmp(cmd->name, name) == 0 && cmd->handler == g_command_hash_table[hash]) {
+                    return cmd->handler;
+                }
+            }
+        }
+        hash = (hash + 1) % COMMAND_HASH_SIZE;
+    } while (hash != original_hash);
+    
+    // Fallback to linear search if hash lookup fails
+    size_t num_commands = (__stop_shellcmds - __start_shellcmds);
     for (size_t i = 0; i < num_commands; i++) {
         const shell_command_info_t* cmd = &__start_shellcmds[i];
         if (strcmp(cmd->name, name) == 0) {
@@ -367,6 +432,13 @@ void launch_shell(int n) {
         printf("%c%d:%s", 200, 200, 200, g_current_drive, shell_current_path); // white for drive:path
         printf("%c! ", 255, 255, 0); // yellow for !
         string ch = readStr_with_history(&g_command_history);
+        
+        // Initialize dynamic log buffer if logging is active
+        if (shell_log_active && shell_log_buf == NULL) {
+            // Call the initialization function from vga.c
+            extern void init_dynamic_log_buffer(void);
+            init_dynamic_log_buffer();
+        }
         if (shell_log_active) {
             char logline[256];
             int pos = 0;
@@ -377,7 +449,36 @@ void launch_shell(int n) {
             logline[pos++] = '\n';
             logline[pos] = '\0';
             for (int k = 0; logline[k] && shell_log_pos < LOG_BUF_SIZE - 1; k++) {
+                // Check if we need to start a new line
+                if (shell_log_pos == 0 || shell_log_buf[shell_log_pos - 1] == '\n') {
+                    shell_log_current_line_start = shell_log_pos;
+                }
+                
                 shell_log_buf[shell_log_pos++] = logline[k];
+                
+                // If we just added a newline, record the line start
+                if (logline[k] == '\n') {
+                    shell_log_line_starts[shell_log_line_count] = shell_log_current_line_start;
+                    shell_log_line_count++;
+                    
+                    // Keep only last 1000 lines
+                    if (shell_log_line_count > 1000) {
+                        // Move buffer content to start, keeping only last 1000 lines
+                        int first_line_start = shell_log_line_starts[1];
+                        int bytes_to_keep = shell_log_pos - first_line_start;
+                        
+                        if (bytes_to_keep > 0 && first_line_start < shell_log_pos) {
+                            memmove(shell_log_buf, shell_log_buf + first_line_start, bytes_to_keep);
+                            shell_log_pos = bytes_to_keep;
+                            
+                            // Adjust line start positions
+                            for (int j = 0; j < 1000; j++) {
+                                shell_log_line_starts[j] = shell_log_line_starts[j + 1] - first_line_start;
+                            }
+                            shell_log_line_count = 1000;
+                        }
+                    }
+                }
             }
             shell_log_buf[shell_log_pos] = '\0';
             shell_log_flush();

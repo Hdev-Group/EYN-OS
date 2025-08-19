@@ -20,21 +20,14 @@ syscall_entry:
     push dword 0            ; err_code
     push dword 0x80         ; int_no
 
-    ; Load kernel data segment selector into ds/es for C code if needed
-    mov ax, 0x10            ; assuming GDT: 0x10 = kernel data selector
-    mov ds, ax
-    mov es, ax
-
-    ; Compute pointer to regs_t structure currently on stack at saved EDI
+    ; Saved EDI is at [esp + 8]
     mov eax, esp
-    add eax, 36 ; eax = &saved EDI (start of regs_t)
+    add eax, 8 ; eax = &saved EDI (start of regs_t)
     push eax
     call syscall_dispatch
     add esp, 4
 
-    ; On return, EAX holds return value; store into saved EAX within pusha area
-    ; Saved EAX is at esp + 8 (after int_no, err_code)
-    mov [esp + 8], eax
+    mov [esp + 36], eax
 
     ; Pop our synthetic fields
     add esp, 8 ; discard int_no, err_code

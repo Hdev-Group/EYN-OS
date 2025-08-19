@@ -104,7 +104,7 @@ void help_tui() {
     }
     
     // Create sorted array of command pointers
-    const shell_command_info_t** sorted_cmds = (const shell_command_info_t**) my_malloc(cmd_count * sizeof(const shell_command_info_t*));
+    const shell_command_info_t** sorted_cmds = (const shell_command_info_t**) malloc(cmd_count * sizeof(const shell_command_info_t*));
     if (!sorted_cmds) {
         printf("Error: Memory allocation failed.\n");
         return;
@@ -332,6 +332,6 @@ void help_tui() {
     }
     
     // Clean up
-    my_free(sorted_cmds);
+    free(sorted_cmds);
     printf("\n\n");
 } 

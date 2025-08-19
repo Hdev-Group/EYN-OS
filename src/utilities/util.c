@@ -3,6 +3,7 @@
 #include <string.h>
 #include <vga.h>
 #include <stdint.h>
+#include <multiboot.h>
 
 volatile int g_user_interrupt = 0;
 
@@ -10,16 +11,110 @@ uint32_t __stack_chk_fail(){
     return 0;
 }
 
-void memory_copy(char *source, char *dest, int nbytes) {
-    int i;
-    for (i = 0; i < nbytes; i++) {
-        *(dest + i) = *(source + i);             //    dest[i] = source[i]
+// Standard C library memory functions (optimized implementations)
+void *memcpy(void *dest, const void *src, size_t n) {
+    if (n <= 0) return dest;
+    
+    // Check if we can do word-aligned copying (both pointers aligned to 4-byte boundary)
+    uint32_t src_addr = (uint32_t)src;
+    uint32_t dest_addr = (uint32_t)dest;
+    
+    // Copy unaligned bytes at the beginning
+    size_t unaligned_start = 0;
+    if (src_addr % 4 != 0 || dest_addr % 4 != 0) {
+        unaligned_start = 4 - (src_addr % 4);
+        if (unaligned_start > n) unaligned_start = n;
+        
+        for (size_t i = 0; i < unaligned_start; i++) {
+            ((char*)dest)[i] = ((char*)src)[i];
+        }
     }
+    
+    // Copy 4-byte words when possible
+    size_t words = (n - unaligned_start) / 4;
+    if (words > 0) {
+        uint32_t *src32 = (uint32_t*)((char*)src + unaligned_start);
+        uint32_t *dst32 = (uint32_t*)((char*)dest + unaligned_start);
+        
+        for (size_t i = 0; i < words; i++) {
+            dst32[i] = src32[i];
+        }
+    }
+    
+    // Copy remaining bytes
+    size_t remaining = n - unaligned_start - (words * 4);
+    if (remaining > 0) {
+        size_t offset = unaligned_start + (words * 4);
+        for (size_t i = 0; i < remaining; i++) {
+            ((char*)dest)[offset + i] = ((char*)src)[offset + i];
+        }
+    }
+    
+    return dest;
 }
 
-void memory_set(uint8 *dest, uint8 val, uint32 len) {
-    uint8 *temp = (uint8 *)dest;
-    for ( ; len != 0; len--) *temp++ = val;
+void *memset(void *s, int c, size_t n) {
+    if (n <= 0) return s;
+    
+    uint8_t *ptr = (uint8_t*)s;
+    uint8_t val = (uint8_t)c;
+    
+    // Check if we can do word-aligned setting
+    uint32_t addr = (uint32_t)ptr;
+    size_t unaligned_start = 0;
+    
+    if (addr % 4 != 0) {
+        unaligned_start = 4 - (addr % 4);
+        if (unaligned_start > n) unaligned_start = n;
+        
+        for (size_t i = 0; i < unaligned_start; i++) {
+            ptr[i] = val;
+        }
+    }
+    
+    // Set 4-byte words when possible
+    size_t words = (n - unaligned_start) / 4;
+    if (words > 0) {
+        uint32_t *ptr32 = (uint32_t*)(ptr + unaligned_start);
+        uint32_t word_val = (val << 24) | (val << 16) | (val << 8) | val;
+        
+        for (size_t i = 0; i < words; i++) {
+            ptr32[i] = word_val;
+        }
+    }
+    
+    // Set remaining bytes
+    size_t remaining = n - unaligned_start - (words * 4);
+    if (remaining > 0) {
+        size_t offset = unaligned_start + (words * 4);
+        for (size_t i = 0; i < remaining; i++) {
+            ptr[offset + i] = val;
+        }
+    }
+    
+    return s;
+}
+
+// EYN-OS specific memory functions
+// Provide POSIX-like names for allocators to standardize usage
+
+void *memmove(void *dest, const void *src, size_t n) {
+    if (n <= 0) return dest;
+    
+    // If source and destination overlap and source is before destination,
+    // we need to copy backwards to avoid overwriting source data
+    if (src < dest && (char*)src + n > (char*)dest) {
+        char *d = (char*)dest + n - 1;
+        const char *s = (const char*)src + n - 1;
+        for (size_t i = 0; i < n; i++) {
+            d[i] = s[i];
+        }
+    } else {
+        // Use memcpy for non-overlapping or forward copy
+        return memcpy(dest, src, n);
+    }
+    
+    return dest;
 }
 
 /**
@@ -39,177 +134,9 @@ string int_to_ascii(int n, char str[]) {
     // Note: String reversal is handled in int_to_string function
     return str;
 }
-string int_to_string(int n)
-{
-	// Use stack allocation instead of heap allocation
-	char temp_buffer[50];
-	int_to_ascii(n, temp_buffer);
-	int len = strlength(temp_buffer);
-	int i = 0;
-	int j = len - 1;
-	while(i<(len/2 + len%2))
-	{
-		char tmp = temp_buffer[i];
-		temp_buffer[i] = temp_buffer[j];
-		temp_buffer[j] = tmp;
-		i++;
-		j--;
-	}
-	
-	// Only allocate heap memory if absolutely necessary
-	// For now, use a static buffer to avoid heap allocation
-	static char result_buffer[50];
-	strcpy(result_buffer, temp_buffer);
-	return result_buffer;
-}
+// String conversion functions moved to string.c for standardization
 
-int str_to_int(string ch)
-{
-	int n = 0;
-	int p = 1;
-	int strlen = strlength(ch);
-	int i;
-	for (i = strlen-1;i>=0;i--)
-	{
-		n += ((int)(ch[i] - '0')) * p;
-		p *= 10;
-	}
-	return n;
-}
-
-string char_to_string(char ch) {
-	string str;
-	str[0] = ch;
-
-	return str;
-}
-
-uint8 check_string(string str) {
-	uint8 size = strlength(str);
-	uint8 res = 0;
-	for (uint8 i = 0; i <= size; i++) {
-		if (
-			str[i] == '1' ||
-			str[i] == '2' ||
-			str[i] == '3' ||
-			str[i] == '4' ||
-			str[i] == '5' ||
-			str[i] == '6' ||
-			str[i] == '7' ||
-			str[i] == '8' ||
-			str[i] == '9' ||
-			str[i] == '-' ||
-			str[i] == '=' ||
-			str[i] == '0' ||
-			str[i] == '!' ||
-			str[i] == '@' ||
-			str[i] == '#' ||
-			str[i] == '$' ||
-			str[i] == '%' ||
-			str[i] == '^' ||
-			str[i] == '&' ||
-			str[i] == '*' ||
-			str[i] == '(' ||
-			str[i] == ')' ||
-			str[i] == '_' ||
-			str[i] == '+' ||
-			str[i] == 'q' ||
-			str[i] == 'w' ||
-			str[i] == 'e' ||
-			str[i] == 'r' ||
-			str[i] == 't' ||
-			str[i] == 'y' ||
-			str[i] == 'u' ||
-			str[i] == 'i' ||
-			str[i] == 'o' ||
-			str[i] == 'p' ||
-			str[i] == '[' ||
-			str[i] == ']' ||
-			str[i] == '\\' ||
-			str[i] == 'Q' ||
-			str[i] == 'W' ||
-			str[i] == 'E' ||
-			str[i] == 'R' ||
-			str[i] == 'T' ||
-			str[i] == 'Y' ||
-			str[i] == 'U' ||
-			str[i] == 'I' ||
-			str[i] == 'O' ||
-			str[i] == 'P' ||
-			str[i] == '{' ||
-			str[i] == '}' ||
-			str[i] == '|' ||
-			str[i] == 'a' ||
-			str[i] == 's' ||
-			str[i] == 'd' ||
-			str[i] == 'f' ||
-			str[i] == 'g' ||
-			str[i] == 'h' ||
-			str[i] == 'j' ||
-			str[i] == 'k' ||
-			str[i] == 'l' ||
-			str[i] == ';' ||
-			str[i] == '\'' ||
-			str[i] == 'A' ||
-			str[i] == 'S' ||
-			str[i] == 'D' ||
-			str[i] == 'F' ||
-			str[i] == 'G' ||
-			str[i] == 'H' ||
-			str[i] == 'J' ||
-			str[i] == 'K' ||
-			str[i] == 'L' ||
-			str[i] == ':' ||
-			str[i] == '"' ||
-			str[i] == 'z' ||
-			str[i] == 'x' ||
-			str[i] == 'c' ||
-			str[i] == 'v' ||
-			str[i] == 'b' ||
-			str[i] == 'n' ||
-			str[i] == 'm' ||
-			str[i] == ',' ||
-			str[i] == '.' ||
-			str[i] == '/' ||
-			str[i] == 'Z' ||
-			str[i] == 'X' ||
-			str[i] == 'C' ||
-			str[i] == 'V' ||
-			str[i] == 'B' ||
-			str[i] == 'N' ||
-			str[i] == 'M' ||
-			str[i] == '<' ||
-			str[i] == '>' ||
-			str[i] == '?'
-		) {
-			res = 1;
-		}
-	}
-
-	return res;
-}
-
-uint8 check_string_numbers(string str) {
-	uint8 size = strlength(str);
-	uint8 res = 0;
-	for (uint8 i = 0; i <= size; i++) {
-		if (
-			str[i] == '1' ||
-			str[i] == '2' ||
-			str[i] == '3' ||
-			str[i] == '4' ||
-			str[i] == '5' ||
-			str[i] == '6' ||
-			str[i] == '7' ||
-			str[i] == '8' ||
-			str[i] == '9' ||
-			str[i] == '0'
-		) {
-			res = 1;
-		}
-	}
-	return res;
-}
+// String validation functions moved to string.c for standardization
 
 // --- Robust Memory Manager with Enhanced Error Handling ---
 #define HEAP_START 0x800000   // 8MB - safer area for heap (reduced from 16MB)
@@ -240,7 +167,7 @@ static uint32 free_count = 0;
 static volatile int stack_overflow_detected = 0;
 
 // Dynamic memory detection (safer implementation)
-static uint32 detect_available_memory() {
+uint32 detect_available_memory() {
     // Try to detect available RAM using multiboot info
     extern multiboot_info_t *g_mbi;
     
@@ -281,7 +208,14 @@ static uint32 detect_available_memory() {
         if (mmap[i].type == MULTIBOOT_MEMORY_AVAILABLE) {
             // Limit individual region size to prevent overflow
             if (mmap[i].len > 0 && mmap[i].len < 0x80000000) { // 2GB limit
-                total_ram += mmap[i].len;
+                // Check for overflow before addition
+                if (total_ram + mmap[i].len >= total_ram) { // Overflow check
+                    total_ram += mmap[i].len;
+                } else {
+                    // Overflow detected, cap at maximum safe value
+                    total_ram = 0xFFFFFFFF;
+                    break;
+                }
             }
         }
         entries_processed++;
@@ -299,17 +233,17 @@ static uint32 detect_available_memory() {
 static void calculate_optimal_heap_size() {
     uint32 available_ram = detect_available_memory();
     
-    // Use more generous heap sizing to prevent memory exhaustion
+    // Use more generous heap sizing for zero-copy operations
     if (available_ram <= 4 * 1024 * 1024) {        // 4MB or less
-        heap_size = 0x20000;                         // 128KB
+        heap_size = 0x40000;                         // 256KB (doubled)
     } else if (available_ram <= 16 * 1024 * 1024) { // 16MB or less
-        heap_size = 0x40000;                         // 256KB
+        heap_size = 0x80000;                         // 512KB (doubled)
     } else if (available_ram <= 64 * 1024 * 1024) { // 64MB or less
-        heap_size = 0x100000;                        // 1MB
+        heap_size = 0x200000;                        // 2MB (doubled)
     } else if (available_ram <= 256 * 1024 * 1024) { // 256MB or less
-        heap_size = 0x400000;                        // 4MB
+        heap_size = 0x800000;                        // 8MB (doubled)
     } else {                                         // 256MB+
-        heap_size = 0x1000000;                       // 16MB
+        heap_size = 0x2000000;                       // 32MB (doubled)
     }
     
     // Ensure heap doesn't exceed available memory (more conservative)
@@ -348,7 +282,7 @@ static int validate_block(block_header_t* block, uint32 offset) {
     }
     
     // Check for reasonable block size
-    if (block->size < BLOCK_HEADER_SIZE || block->size > heap_size) {
+    if (block->size < BLOCK_HEADER_SIZE || block->size > heap_size || block->size == 0) {
         printf("%c[MEMORY] Invalid block size at offset 0x%X: %d (min: %d, max: %d)\n", 255, 0, 0, offset, block->size, BLOCK_HEADER_SIZE, heap_size);
         memory_errors++;
         return 0;
@@ -379,12 +313,8 @@ void init_memory_manager() {
     // Try to detect available memory and adjust heap size accordingly
     uint32 available_ram = detect_available_memory();
     
-    // For low memory systems, still reserve enough to handle FS ops + assembler buffers
-    if (available_ram <= 16 * 1024 * 1024) { // 16MB or less
-        heap_size = 256 * 1024; // 256KB for 8-16MB systems
-    } else {
-        heap_size = HEAP_SIZE_DEFAULT; // 128KB for larger systems
-    }
+    // Use the new generous heap sizing for zero-copy operations
+    calculate_optimal_heap_size();
     
     // Verify heap start address is accessible
     if ((uint32)heap_start < 0x800000) {
@@ -392,7 +322,7 @@ void init_memory_manager() {
     }
     
     // Initialize heap with calculated size
-    memory_set(heap_start, 0, heap_size);
+    memset(heap_start, 0, heap_size);
     
     // Verify the memory was set properly
     uint8* test_ptr = heap_start;
@@ -413,9 +343,9 @@ void init_memory_manager() {
     free_count = 0;
     
     // Test allocation to verify heap is working
-    void* test_alloc = my_malloc(16);
+    void* test_alloc = malloc(16);
     if (test_alloc) {
-        my_free(test_alloc);
+        free(test_alloc);
     } else {
         memory_initialized = 0;
     }
@@ -507,7 +437,7 @@ static void merge_free_blocks() {
     }
 }
 
-void* my_malloc(int nbytes) {
+void* malloc(size_t nbytes) {
     // Lazy initialization
     ensure_memory_initialized();
     
@@ -519,8 +449,8 @@ void* my_malloc(int nbytes) {
         return NULL;
     }
     
-    // Increased limit for larger files like .rei images
-    uint32 max_allocation = heap_size / 2; // 50% of heap for larger files
+    // Increased limit for larger files like .rei images and zero-copy operations
+    uint32 max_allocation = heap_size * 3 / 4; // 75% of heap for larger files (increased from 50%)
     if (nbytes > max_allocation) {
         printf("%c[MEMORY] Request too large: %d bytes (heap: %d KB, max: %d bytes)\n", 255, 0, 0, nbytes, heap_size / 1024, max_allocation);
         return NULL;
@@ -551,7 +481,7 @@ void* my_malloc(int nbytes) {
     return (void*)(heap_start + block_offset + BLOCK_HEADER_SIZE);
 }
 
-void my_free(void* ptr) {
+void free(void* ptr) {
     if (!ptr) return;
     
     // Lazy initialization check
@@ -599,10 +529,10 @@ void my_free(void* ptr) {
     free_count++;
 }
 
-void* my_realloc(void* ptr, int new_size) {
-    if (!ptr) return my_malloc(new_size);
+void* realloc(void* ptr, size_t new_size) {
+    if (!ptr) return malloc(new_size);
     if (new_size <= 0) {
-        my_free(ptr);
+        free(ptr);
         return NULL;
     }
     
@@ -633,21 +563,21 @@ void* my_realloc(void* ptr, int new_size) {
     if (new_size <= current_size) {
         return ptr; // No need to reallocate
     }
-    void* new_ptr = my_malloc(new_size);
+    void* new_ptr = malloc(new_size);
     if (!new_ptr) return NULL;
-    memory_copy((char*)ptr, (char*)new_ptr, current_size);
-    my_free(ptr);
+    memcpy((char*)ptr, (char*)new_ptr, current_size);
+    free(ptr);
     return new_ptr;
 }
 
-void* my_calloc(int count, int size) {
+void* calloc(size_t count, size_t size) {
     // Lazy initialization
     ensure_memory_initialized();
     
     int total_size = count * size;
-    void* ptr = my_malloc(total_size);
+    void* ptr = malloc(total_size);
     if (ptr) {
-        memory_set((uint8*)ptr, 0, total_size);
+        memset((uint8*)ptr, 0, total_size);
     }
     return ptr;
 }

@@ -148,7 +148,7 @@ static eynfs_dir_cache_entry_t* eynfs_dir_cache_alloc() {
     for (int i = 0; i < EYNFS_DIR_CACHE_SIZE; i++) {
         if (!dir_cache[i].entries) {
             // Allocate enough space for larger directory entries (16KB limit)
-            dir_cache[i].entries = (eynfs_dir_entry_t*)my_malloc(16384);
+            dir_cache[i].entries = (eynfs_dir_entry_t*)malloc(16384);
             if (dir_cache[i].entries) {
                 return &dir_cache[i];
             }
@@ -157,8 +157,8 @@ static eynfs_dir_cache_entry_t* eynfs_dir_cache_alloc() {
     
     // Evict first entry (simple LRU)
     if (dir_cache[0].entries) {
-        my_free(dir_cache[0].entries);
-        dir_cache[0].entries = (eynfs_dir_entry_t*)my_malloc(16384);
+        free(dir_cache[0].entries);
+        dir_cache[0].entries = (eynfs_dir_entry_t*)malloc(16384);
         if (dir_cache[0].entries) {
             return &dir_cache[0];
         }
@@ -321,7 +321,7 @@ int eynfs_count_dir_entries(uint8 drive, uint32_t lba) {
 // Helper: Free a chain of directory blocks
 static int eynfs_free_dir_chain(uint8 drive, uint32_t first_block) {
     eynfs_superblock_t sb;
-    if (eynfs_read_superblock(drive, 0, &sb) != 0) return -1;
+    if (eynfs_read_superblock(drive, EYNFS_SUPERBLOCK_LBA, &sb) != 0) return -1;
     
     uint32_t block_num = first_block;
     while (block_num != 0) {
@@ -340,7 +340,7 @@ int eynfs_write_dir_table(uint8 drive, uint32 lba, const eynfs_dir_entry_t *entr
     if (num_entries == 0) return 0;
     
     eynfs_superblock_t sb;
-    if (eynfs_read_superblock(drive, 0, &sb) != 0) return -1;
+    if (eynfs_read_superblock(drive, EYNFS_SUPERBLOCK_LBA, &sb) != 0) return -1;
     
     // First, read the existing block chain to preserve it
     uint32_t original_blocks[32]; // Support up to 32 blocks
@@ -527,11 +527,11 @@ int eynfs_find_in_dir(uint8 drive, const eynfs_superblock_t *sb, uint32_t dir_bl
         allocation_size = 16384;
     }
     
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(allocation_size);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(allocation_size);
     if (!entries) return -1;
     int count = eynfs_read_dir_table(drive, dir_block, entries, entry_count);
     if (count < 0) {
-        my_free(entries);
+        free(entries);
         return -1;
     }
     
@@ -541,7 +541,7 @@ int eynfs_find_in_dir(uint8 drive, const eynfs_superblock_t *sb, uint32_t dir_bl
         if (strncmp(entries[i].name, name, EYNFS_NAME_MAX) == 0) {
             if (out_entry) *out_entry = entries[i];
             if (out_index) *out_index = i;
-            my_free(entries);
+            free(entries);
             return 0;
         }
     }
@@ -564,7 +564,7 @@ int eynfs_find_in_dir(uint8 drive, const eynfs_superblock_t *sb, uint32_t dir_bl
         }
     }
     
-    my_free(entries);
+    free(entries);
     return -1;
 }
 
@@ -629,19 +629,19 @@ int eynfs_create_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
         allocation_size = 16384;
     }
     
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(allocation_size);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(allocation_size);
     if (!entries) return -1;
     
     // Initialize all entries to zero to ensure clean state
     memset(entries, 0, allocation_size);
     
     int count = eynfs_read_dir_table(drive, parent_block, entries, entry_count);
-    if (count < 0) { my_free(entries); return -1; }
+    if (count < 0) { free(entries); return -1; }
     
     // Check if entry already exists
     for (int i = 0; i < count; ++i) {
         if (entries[i].name[0] != '\0' && strncmp(entries[i].name, name, EYNFS_NAME_MAX) == 0) {
-            my_free(entries);
+            free(entries);
             return -1; // Entry already exists
         }
     }
@@ -658,31 +658,31 @@ int eynfs_create_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
         size_t new_allocation_size = sizeof(eynfs_dir_entry_t) * (entry_count + 1);
         if (new_allocation_size > 16384) { // 16KB limit
             printf("%cWarning: Cannot add new entry - directory allocation would exceed 16KB limit\n", 255, 165, 0);
-            my_free(entries);
+            free(entries);
             return -1;
         }
         
-        eynfs_dir_entry_t* new_entries = (eynfs_dir_entry_t*)my_malloc(new_allocation_size);
-        if (!new_entries) { my_free(entries); return -1; }
+        eynfs_dir_entry_t* new_entries = (eynfs_dir_entry_t*)malloc(new_allocation_size);
+        if (!new_entries) { free(entries); return -1; }
         
         // Bounds check for memory copy
         if (entry_count * sizeof(eynfs_dir_entry_t) <= new_allocation_size) {
             memcpy(new_entries, entries, entry_count * sizeof(eynfs_dir_entry_t));
         } else {
             printf("%cWarning: Memory copy bounds check failed in create_entry\n", 255, 165, 0);
-            my_free(new_entries);
-            my_free(entries);
+            free(new_entries);
+            free(entries);
             return -1;
         }
         
-        my_free(entries);
+        free(entries);
         entries = new_entries;
         free_idx = entry_count;
         count = entry_count + 1;
     }
     
     int new_block = eynfs_alloc_block(drive, sb);
-    if (new_block < 0) { my_free(entries); return -1; }
+    if (new_block < 0) { free(entries); return -1; }
     
     memset(&entries[free_idx], 0, sizeof(eynfs_dir_entry_t));
     strncpy(entries[free_idx].name, name, EYNFS_NAME_MAX-1);
@@ -695,13 +695,13 @@ int eynfs_create_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
         uint8 zero_block[EYNFS_BLOCK_SIZE] = {0};
         if (ata_write_sector(drive, new_block, zero_block) != 0) { 
             eynfs_free_block(drive, sb, new_block);
-            my_free(entries); 
+            free(entries); 
             return -1; 
         }
     }
     
     int res = eynfs_write_dir_table(drive, parent_block, entries, count);
-    my_free(entries);
+    free(entries);
     if (res < 0) {
         eynfs_free_block(drive, sb, new_block);
         return -1;
@@ -731,16 +731,14 @@ int eynfs_delete_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
         allocation_size = 16384;
     }
     
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(allocation_size);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(allocation_size);
     if (!entries) return -1;
     
     // Initialize all entries to zero to ensure clean state
     memset(entries, 0, allocation_size);
     
     int count = eynfs_read_dir_table(drive, parent_block, entries, entry_count);
-    if (count < 0) { my_free(entries); return -1; }
-    
-    printf("%c[DEBUG] eynfs_delete_entry: Read %d entries from parent block %d, looking for '%s'\n", 0, 255, 255, count, parent_block, name);
+    if (count < 0) { free(entries); return -1; }
     
     for (int i = 0; i < count; ++i) {
         if (entries[i].name[0] == '\0') continue;
@@ -758,10 +756,8 @@ int eynfs_delete_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
             // Clear the entry
             memset(&entries[i], 0, sizeof(eynfs_dir_entry_t));
             
-            printf("%c[DEBUG] eynfs_delete_entry: Writing %d entries back to parent block %d\n", 0, 255, 255, count, parent_block);
             int res = eynfs_write_dir_table(drive, parent_block, entries, count);
-            printf("%c[DEBUG] eynfs_delete_entry: Write result: %d\n", 0, 255, 255, res);
-            my_free(entries);
+            free(entries);
             if (res < 0) return -1;
             
             // Clear cache to ensure deleted entries are no longer visible
@@ -770,7 +766,7 @@ int eynfs_delete_entry(uint8 drive, eynfs_superblock_t *sb, uint32_t parent_bloc
             return 0;
         }
     }
-    my_free(entries);
+    free(entries);
     return -1; // Entry not found
 }
 
@@ -893,7 +889,7 @@ int eynfs_write_file(uint8 drive, eynfs_superblock_t *sb, eynfs_dir_entry_t *ent
         allocation_size = 16384;
     }
     
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(allocation_size);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(allocation_size);
     if (!entries) {
         printf("Error: Out of memory for directory update\n");
         return -1;
@@ -901,7 +897,7 @@ int eynfs_write_file(uint8 drive, eynfs_superblock_t *sb, eynfs_dir_entry_t *ent
     
     int count = eynfs_read_dir_table(drive, parent_block, entries, entry_count);
     if (count < 0) {
-        my_free(entries);
+        free(entries);
         return -1;
     }
     
@@ -916,7 +912,7 @@ int eynfs_write_file(uint8 drive, eynfs_superblock_t *sb, eynfs_dir_entry_t *ent
     
     // Write back the directory table with error checking
     int write_result = eynfs_write_dir_table(drive, parent_block, entries, count);
-    my_free(entries);
+    free(entries);
     if (write_result < 0) {
         printf("Error: Failed to write directory table\n");
         return -1;
@@ -1114,19 +1110,19 @@ int write(int fd, const void* buf, int size) {
     // For append mode, we need to read existing data first
     if (f->mode == 2 && f->offset > 0) {
         // Read existing data
-        uint8_t* existing_data = (uint8_t*)my_malloc(f->entry.size);
+        uint8_t* existing_data = (uint8_t*)malloc(f->entry.size);
         if (!existing_data) return -1;
         
         int existing_read = eynfs_read_file(f->drive, &f->sb, &f->entry, existing_data, f->entry.size, 0);
         if (existing_read < 0) {
-            my_free(existing_data);
+            free(existing_data);
             return -1;
         }
         
         // Combine existing data with new data
-        uint8_t* combined_data = (uint8_t*)my_malloc(existing_read + size);
+        uint8_t* combined_data = (uint8_t*)malloc(existing_read + size);
         if (!combined_data) {
-            my_free(existing_data);
+            free(existing_data);
             return -1;
         }
         
@@ -1137,8 +1133,8 @@ int write(int fd, const void* buf, int size) {
         int n = eynfs_write_file(f->drive, &f->sb, &f->entry, combined_data, existing_read + size, 
                                 f->parent_block, f->entry_index);
         
-        my_free(existing_data);
-        my_free(combined_data);
+        free(existing_data);
+        free(combined_data);
         
         if (n > 0) {
             f->offset = n;
@@ -1177,7 +1173,7 @@ void eynfs_cache_clear() {
     // Clear directory cache
     for (int i = 0; i < EYNFS_DIR_CACHE_SIZE; i++) {
         if (dir_cache[i].entries) {
-            my_free(dir_cache[i].entries);
+            free(dir_cache[i].entries);
             dir_cache[i].entries = NULL;
         }
         dir_cache[i].count = 0;

@@ -270,7 +270,7 @@ int boyer_moore_search(const char* text, const char* pattern) {
     
     // Allocate tables
     int bad_char_table[256];
-    int* good_suffix_table = (int*)my_malloc(pattern_len * sizeof(int));
+    int* good_suffix_table = (int*)malloc(pattern_len * sizeof(int));
     
     if (!good_suffix_table) {
         return -1; // Memory allocation failed
@@ -294,7 +294,7 @@ int boyer_moore_search(const char* text, const char* pattern) {
         
         if (j < 0) {
             // Pattern found
-            my_free(good_suffix_table);
+            free(good_suffix_table);
             return k + 1;
         } else {
             // Calculate shift
@@ -309,6 +309,6 @@ int boyer_moore_search(const char* text, const char* pattern) {
         }
     }
     
-    my_free(good_suffix_table);
+    free(good_suffix_table);
     return -1; // Pattern not found
 }

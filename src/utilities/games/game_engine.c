@@ -153,7 +153,7 @@ int game_read_text_file(const char* filename, char** buffer, int* size) {
     }
     
     // Allocate memory for file content
-    *buffer = (char*)my_malloc(entry.size + 1);
+    *buffer = (char*)malloc(entry.size + 1);
     if (!*buffer) {
         printf("%cError: Failed to allocate memory for game file.\n", 255, 0, 0);
         return -1;
@@ -163,7 +163,7 @@ int game_read_text_file(const char* filename, char** buffer, int* size) {
     int bytes_read = eynfs_read_file(g_current_drive, &sb, &entry, *buffer, entry.size, 0);
     if (bytes_read != entry.size) {
         printf("%cError: Failed to read game file.\n", 255, 0, 0);
-        my_free(*buffer);
+        free(*buffer);
         *buffer = NULL;
         return -1;
     }
@@ -184,9 +184,9 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
     }
     
     // Allocate config
-    *config = (game_config_t*)my_malloc(sizeof(game_config_t));
+    *config = (game_config_t*)malloc(sizeof(game_config_t));
     if (!*config) {
-        my_free(buffer);
+        free(buffer);
         return -1;
     }
     
@@ -217,9 +217,9 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
             
             // Allocate new level
             if (level_index == 0) {
-                (*config)->levels = (game_level_t*)my_malloc(sizeof(game_level_t));
+                (*config)->levels = (game_level_t*)malloc(sizeof(game_level_t));
                 } else {
-                (*config)->levels = (game_level_t*)my_realloc((*config)->levels, 
+                (*config)->levels = (game_level_t*)realloc((*config)->levels, 
                     (level_index + 1) * sizeof(game_level_t));
             }
             
@@ -253,9 +253,9 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
         else if (in_level && in_objects && strchr(line, ':')) {
             // Parse object definition
             if (object_index == 0) {
-                (*config)->levels[level_index].objects = (game_object_t*)my_malloc(sizeof(game_object_t));
+                (*config)->levels[level_index].objects = (game_object_t*)malloc(sizeof(game_object_t));
             } else {
-                (*config)->levels[level_index].objects = (game_object_t*)my_realloc(
+                (*config)->levels[level_index].objects = (game_object_t*)realloc(
                     (*config)->levels[level_index].objects, 
                     (object_index + 1) * sizeof(game_object_t));
             }
@@ -267,9 +267,9 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
         else if (in_level && in_entities && strchr(line, ':')) {
             // Parse entity definition
             if (entity_index == 0) {
-                (*config)->levels[level_index].entities = (game_entity_t*)my_malloc(sizeof(game_entity_t));
+                (*config)->levels[level_index].entities = (game_entity_t*)malloc(sizeof(game_entity_t));
             } else {
-                (*config)->levels[level_index].entities = (game_entity_t*)my_realloc(
+                (*config)->levels[level_index].entities = (game_entity_t*)realloc(
                     (*config)->levels[level_index].entities, 
                     (entity_index + 1) * sizeof(game_entity_t));
             }
@@ -289,7 +289,7 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
             int width = strlen(line);
             if (layout_y == 0) {
                 (*config)->levels[level_index].width = width;
-                (*config)->levels[level_index].board = (uint8_t*)my_malloc(width * 20); // Assume max height 20
+                (*config)->levels[level_index].board = (uint8_t*)malloc(width * 20); // Assume max height 20
             }
             
             for (int x = 0; x < width && x < (*config)->levels[level_index].width; x++) {
@@ -318,7 +318,7 @@ int game_parse_text_file(const char* filename, game_config_t** config) {
     }
     
     (*config)->level_count = level_index + 1;
-    my_free(buffer);
+    free(buffer);
     
     return 0;
 }
@@ -328,21 +328,21 @@ void game_free_config(game_config_t* config) {
     if (!config) return;
     
     for (int i = 0; i < config->level_count; i++) {
-        if (config->levels[i].board) my_free(config->levels[i].board);
-        if (config->levels[i].objects) my_free(config->levels[i].objects);
-        if (config->levels[i].entities) my_free(config->levels[i].entities);
+        if (config->levels[i].board) free(config->levels[i].board);
+        if (config->levels[i].objects) free(config->levels[i].objects);
+        if (config->levels[i].entities) free(config->levels[i].entities);
     }
     
-    if (config->levels) my_free(config->levels);
-    my_free(config);
+    if (config->levels) free(config->levels);
+    free(config);
 }
 
 // Free game state
 void game_free_state(game_state_t* state) {
     if (!state) return;
     
-    if (state->display_buffer) my_free(state->display_buffer);
-    if (state->game_specific_data) my_free(state->game_specific_data);
+    if (state->display_buffer) free(state->display_buffer);
+    if (state->game_specific_data) free(state->game_specific_data);
     game_free_config(state->config);
 }
 
@@ -361,7 +361,7 @@ void init_snake_game(game_state_t* state) {
     if (!state || !state->current_level) return;
     
     // Allocate snake data
-    snake_data_t* snake_data = (snake_data_t*)my_malloc(sizeof(snake_data_t));
+    snake_data_t* snake_data = (snake_data_t*)malloc(sizeof(snake_data_t));
     if (!snake_data) return;
     
     // Initialize snake
@@ -589,7 +589,7 @@ int game_load_from_text_file(const char* filename, game_state_t* state) {
     
     // Allocate display buffer
     int buffer_size = state->current_level->width * state->current_level->height;
-    state->display_buffer = (uint8_t*)my_malloc(buffer_size);
+    state->display_buffer = (uint8_t*)malloc(buffer_size);
     if (!state->display_buffer) {
         game_free_config(state->config);
         state->config = NULL;
@@ -617,8 +617,8 @@ int game_load_from_text_file(const char* filename, game_state_t* state) {
             if (all_zero) needs_default = 1;
         }
         if (needs_default) {
-            if (state->current_level->board) my_free(state->current_level->board);
-            state->current_level->board = (uint8_t*)my_malloc(w * h);
+            if (state->current_level->board) free(state->current_level->board);
+            state->current_level->board = (uint8_t*)malloc(w * h);
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     if (y == 0 || y == h-1 || x == 0 || x == w-1) {

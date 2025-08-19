@@ -25,7 +25,10 @@ void add_to_history(command_history_t* history, const char* command) {
     // Shift history if full
     if (history->count >= MAX_HISTORY_SIZE) {
         for (int i = 0; i < MAX_HISTORY_SIZE - 1; i++) {
-            strcpy(history->commands[i], history->commands[i + 1]);
+            // Add bounds checking for array access
+            if (i + 1 < MAX_HISTORY_SIZE) {
+                strcpy(history->commands[i], history->commands[i + 1]);
+            }
         }
         history->count = MAX_HISTORY_SIZE - 1;
     }

@@ -29,13 +29,28 @@ void outw(uint16 _port, uint16 _data)
     __asm__ __volatile__ ("outw %1, %0" : : "dN" (_port), "a" (_data));
 }
 
+// Simple timer-based sleep using CPU cycles but with better efficiency
 void sleep(uint8 times) {
-    volatile uint32_t i, j;
     extern volatile int g_user_interrupt;
-    // Increase the delay multiplier to make sleep more noticeable
-    for (i = 0; i < times * 500000; i++) {
-        j = i; // prevent optimization
+    
+    // Use a more efficient delay calculation
+    // Instead of 500,000 iterations per unit, use a smaller, more predictable number
+    volatile uint32_t delay_cycles = times * 10000; // Reduced from 500,000
+    
+    // Use a more efficient loop structure
+    for (volatile uint32_t i = 0; i < delay_cycles; i++) {
+        // Check for user interrupt more frequently
         if (g_user_interrupt) break;
+        
+        // Add a small delay to prevent excessive CPU usage
+        // This allows other potential tasks to run
+        if (i % 1000 == 0) {
+            // Small pause every 1000 iterations
+            volatile uint32_t pause = 0;
+            for (volatile uint32_t j = 0; j < 10; j++) {
+                pause = j; // Prevent optimization
+            }
+        }
     }
 }
 

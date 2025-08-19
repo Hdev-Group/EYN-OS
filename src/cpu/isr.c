@@ -70,7 +70,7 @@ extern void isr_install()
     
     // Set up syscall handler (interrupt 0x80) to the assembly stub
     extern void syscall_entry();
-    set_idt_gate(0x80, (uint32)syscall_entry);
+    set_syscall_gate(0x80, (uint32)syscall_entry);
 
     set_idt(); // Load with ASM
 }
@@ -255,14 +255,24 @@ uint32 syscall_dispatch(regs_t* r) {
     uint32 arg1 = r->ebx;
     uint32 arg2 = r->ecx;
     uint32 arg3 = r->edx;
+    printf("[SYSCALL] num=%d a1=%d a2=%d a3=%d\n", (int)syscall_num, (int)arg1, (int)arg2, (int)arg3);
 
     switch (syscall_num) {
         case SYSCALL_WRITE: {
             if (arg1 == 1) {
                 char* buffer = (char*)arg2;
                 int len = (int)arg3;
-                for (int i = 0; i < len; i++) {
-                    printf("%c", buffer[i]);
+                printf("[SYSCALL] write: fd=1 buf=%d len=%d\n", (int)buffer, len);
+                // Print in chunks using %s to avoid the special color control for leading "%c"
+                int pos = 0;
+                while (pos < len) {
+                    int chunk = len - pos;
+                    if (chunk > 120) chunk = 120; // small on-stack buffer
+                    char out[121];
+                    memcpy(out, buffer + pos, chunk);
+                    out[chunk] = '\0';
+                    printf("%s", out);
+                    pos += chunk;
                 }
                 r->eax = (uint32)len; // return bytes written
             } else {

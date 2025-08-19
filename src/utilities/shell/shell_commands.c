@@ -156,7 +156,7 @@ void sort_cmd(string ch) {
     }
     
     // Allocate array of string pointers
-    char** strings = (char**) my_malloc(count * sizeof(char*));
+    char** strings = (char**) malloc(count * sizeof(char*));
     if (!strings) {
         printf("%cError: Memory allocation failed.\n", 255, 0, 0);
         return;
@@ -176,14 +176,14 @@ void sort_cmd(string ch) {
         int len = pos - start;
         
         // Allocate and copy string
-        strings[str_idx] = (char*) my_malloc(len + 1);
+        strings[str_idx] = (char*) malloc(len + 1);
         if (!strings[str_idx]) {
             printf("%cError: Memory allocation failed.\n", 255, 0, 0);
             // Clean up
             for (int j = 0; j < str_idx; j++) {
-                my_free(strings[j]);
+                free(strings[j]);
             }
-            my_free(strings);
+            free(strings);
             return;
         }
         
@@ -203,10 +203,10 @@ void sort_cmd(string ch) {
     // Print sorted strings
     for (int j = 0; j < count; j++) {
         printf("%c%d: %s\n", 255, 255, 255, j + 1, strings[j]);
-        my_free(strings[j]);
+        free(strings[j]);
     }
     
-    my_free(strings);
+    free(strings);
 }
 
 // Ultra-lightweight search with streaming (no large allocations)
@@ -440,7 +440,7 @@ void ver()
     printf("%c#######     ##     ##  ##  ##  #####  ##    ##   #####\n");
     printf("%c###         ##     ##    ####         ##    ##       ##\n");
     printf("%c#######     ##     ##      ##          ######    #####\n");
-    printf("%c(Release 12)\n", 200, 200, 200);
+    printf("%c(Release 13)\n", 200, 200, 200);
 }
 
 // help implementation
@@ -758,19 +758,19 @@ void memory_cmd(string ch) {
         }
         else if (strcmp(space, "test") == 0) {
             printf("%cRunning memory allocation test...\n", 255, 255, 255);
-            void* ptr1 = my_malloc(100);
-            void* ptr2 = my_malloc(200);
-            void* ptr3 = my_malloc(50);
+            void* ptr1 = malloc(100);
+            void* ptr2 = malloc(200);
+            void* ptr3 = malloc(50);
             if (ptr1 && ptr2 && ptr3) {
                 printf("%cBasic allocation test: PASSED\n", 0, 255, 0);
-                my_free(ptr2);
+                free(ptr2);
                 printf("%cFree test: PASSED\n", 0, 255, 0);
-                void* new_ptr = my_realloc(ptr1, 150);
+                void* new_ptr = realloc(ptr1, 150);
                 if (new_ptr) {
                     printf("%cRealloc test: PASSED\n", 0, 255, 0);
-                    my_free(new_ptr);
+                    free(new_ptr);
                 }
-                my_free(ptr3);
+                free(ptr3);
             } else {
                 printf("%cBasic allocation test: FAILED\n", 255, 0, 0);
             }
@@ -781,20 +781,20 @@ void memory_cmd(string ch) {
             void* ptrs[100];
             int count = 0;
             for (int i = 0; i < 100; i++) {
-                ptrs[i] = my_malloc(16 + (i % 50));
+                ptrs[i] = malloc(16 + (i % 50));
                 if (ptrs[i]) count++;
             }
             printf("%cAllocated %d blocks\n", 255, 255, 255, count);
             for (int i = 0; i < 100; i += 2) {
-                if (ptrs[i]) my_free(ptrs[i]);
+                if (ptrs[i]) free(ptrs[i]);
             }
             printf("%cFreed every other block\n", 255, 255, 255);
             for (int i = 0; i < 50; i++) {
-                ptrs[i] = my_malloc(32 + (i % 100));
+                ptrs[i] = malloc(32 + (i % 100));
             }
             printf("%cAllocated more blocks\n", 255, 255, 255);
             for (int i = 0; i < 100; i++) {
-                if (ptrs[i]) my_free(ptrs[i]);
+                if (ptrs[i]) free(ptrs[i]);
             }
             printf("%cStress test completed\n", 0, 255, 0);
             print_memory_stats();
@@ -882,7 +882,7 @@ void log_cmd(string ch) {
     }
 } 
 
-// Hexdump command: prints up to 64 bytes of a file in hex
+// Hexdump command: prints the entire file in hex
 void hexdump_cmd(string ch) {
     char filename[64] = {0};
     int i = 0, j = 0;
@@ -905,12 +905,21 @@ void hexdump_cmd(string ch) {
         printf("[hexdump] File not found: %s\n", filename);
         return;
     }
-    uint8_t buf[64];
-    int n = eynfs_read_file(0, &sb, &entry, buf, sizeof(buf), 0);
-    if (n <= 0) {
-        printf("[hexdump] Failed to read file\n");
+    
+    // Allocate buffer for entire file
+    uint8_t* buf = malloc(entry.size);
+    if (!buf) {
+        printf("[hexdump] Out of memory\n");
         return;
     }
+    
+    int n = eynfs_read_file(0, &sb, &entry, buf, entry.size, 0);
+    if (n <= 0) {
+        printf("[hexdump] Failed to read file\n");
+        free(buf);
+        return;
+    }
+    
     printf("[hexdump] %s (%d bytes):\n", filename, n);
     for (int i = 0; i < n; i += 16) {
         printf("%04d: ", i);
@@ -925,6 +934,8 @@ void hexdump_cmd(string ch) {
         }
         printf("\n");
     }
+    
+    free(buf);
 } 
 
 // error command implementation
@@ -1045,6 +1056,11 @@ void validate_cmd(string ch) {
         }
     }
 }
+
+// Register hexdump command
+REGISTER_SHELL_COMMAND(hexdump, "hexdump", hexdump_cmd, CMD_STREAMING,
+    "Print a hex dump of a file (default 64 bytes).\nUsage: hexdump <file>",
+    "hexdump test.eyn");
 
 // process command implementation
 void process_cmd(string ch) {

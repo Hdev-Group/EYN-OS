@@ -137,7 +137,7 @@ void zread_cmd(string arg) {
     }
     
     // Allocate buffer and read
-    char* buffer = (char*)my_malloc(count + 1);
+    char* buffer = (char*)malloc(count + 1);
     if (!buffer) {
         printf("%cError: Out of memory for read buffer\n", 255, 0, 0);
         return;
@@ -152,7 +152,7 @@ void zread_cmd(string arg) {
         printf("%cFailed to read from fd %d\n", 255, 0, 0, fd);
     }
     
-    my_free(buffer);
+    free(buffer);
 }
 
 // Zero-copy write command

@@ -3,6 +3,7 @@
 #include <multiboot.h>
 #include <util.h>
 #include <system.h>
+#include <string.h>
 
 extern multiboot_info_t *g_mbi;
 
@@ -10,7 +11,7 @@ extern multiboot_info_t *g_mbi;
 int fat32_read_bpb(void* disk_img, struct fat32_bpb* bpb) {
     if (!disk_img || !bpb) return -1;
     // BPB is at offset 0
-    memory_copy((char*)disk_img, (char*)bpb, sizeof(struct fat32_bpb));
+            memcpy(bpb, (char*)disk_img, sizeof(struct fat32_bpb));
     return 0;
 }
 
@@ -87,7 +88,7 @@ int fat32_read_file(void* disk_img, struct fat32_bpb* bpb, const char* filename,
                 // Read file data (no FAT walking, just first cluster)
                 uint32 data_sec = first_data_sec + ((first_clus - 2) * sec_per_clus);
                 uint32 data_offset = data_sec * byts_per_sec;
-                memory_copy((char*)disk_img + data_offset, buf, file_size);
+                memcpy(buf, (char*)disk_img + data_offset, file_size);
                 return file_size;
             }
         }
@@ -228,8 +229,8 @@ int fat32_write_file(void* disk_img, struct fat32_bpb* bpb, const char* filename
     uint32 data_offset = data_sec * byts_per_sec;
     int max_bytes = byts_per_sec * sec_per_clus;
     int write_bytes = bufsize > max_bytes ? max_bytes : bufsize;
-    memory_copy((char*)buf, (char*)disk_img + data_offset, write_bytes);
-    if (write_bytes < max_bytes) memory_set((uint8*)((char*)disk_img + data_offset + write_bytes), 0, max_bytes - write_bytes);
+            memcpy((char*)disk_img + data_offset, buf, write_bytes);
+            if (write_bytes < max_bytes) memset((char*)disk_img + data_offset + write_bytes, 0, max_bytes - write_bytes);
 
     // 5. Update FAT (mark cluster as end-of-chain)
     fat[first_free_clus] = 0x0FFFFFF8;
@@ -264,7 +265,7 @@ int fat32_read_bpb_sector(uint8 drive, uint32 partition_lba_start, struct fat32_
     if (ata_read_sector(drive, partition_lba_start, sector) != 0) {
         return -1;
     }
-    memory_copy((char*)sector, (char*)bpb, sizeof(struct fat32_bpb));
+            memcpy(bpb, (char*)sector, sizeof(struct fat32_bpb));
     return 0;
 }
 
@@ -353,7 +354,7 @@ int fat32_read_file_sector(uint8 drive, uint32 partition_lba_start, struct fat32
                             }
                         uint32 to_copy = byts_per_sec;
                         if (bytes_read + to_copy > file_size) to_copy = file_size - bytes_read;
-                        memory_copy((char*)sector, buf + bytes_read, to_copy);
+                        memcpy(buf + bytes_read, (char*)sector, to_copy);
                         bytes_read += to_copy;
                         }
                         current_clus = fat32_next_cluster_sector(drive, partition_lba_start, bpb, current_clus);
@@ -436,8 +437,8 @@ int fat32_write_file_sector(uint8 drive, uint32 partition_lba_start, struct fat3
 
     // We can only write 512 bytes at a time for now.
     if(write_bytes > 512) write_bytes = 512;
-    memory_copy((char*)buf, (char*)sector, write_bytes);
-    if(write_bytes < 512) memory_set(sector + write_bytes, 0, 512 - write_bytes);
+            memcpy((char*)sector, buf, write_bytes);
+            if(write_bytes < 512) memset(sector + write_bytes, 0, 512 - write_bytes);
     if(ata_write_sector(drive, partition_lba_start + data_sec, sector) != 0) return -6;
 
     // Update FAT
@@ -533,10 +534,10 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     if (type == 0 || total_sectors == 0) return -4;
 
     struct fat32_bpb bpb;
-    memory_set((uint8*)&bpb, 0, sizeof(bpb));
+            memset(&bpb, 0, sizeof(bpb));
 
     bpb.jmpBoot[0] = 0xEB; bpb.jmpBoot[1] = 0x58; bpb.jmpBoot[2] = 0x90;
-    memory_copy("EYN-OS  ", (char*)bpb.OEMName, 8);
+            memcpy((char*)bpb.OEMName, "EYN-OS  ", 8);
     bpb.BytsPerSec = 512;
     if (total_sectors < 65536) bpb.SecPerClus = 1;
     else if (total_sectors < 524288) bpb.SecPerClus = 8;
@@ -558,18 +559,18 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     bpb.DrvNum = 0x80;
     bpb.BootSig = 0x29;
     bpb.VolID = 1337;
-    memory_copy("NO NAME    ", (char*)bpb.VolLab, 11);
-    memory_copy("FAT32   ", (char*)bpb.FilSysType, 8);
+            memcpy((char*)bpb.VolLab, "NO NAME    ", 11);
+            memcpy((char*)bpb.FilSysType, "FAT32   ", 8);
     
     uint8 sector[512];
-    memory_copy((char*)&bpb, (char*)sector, sizeof(bpb));
-    memory_set(sector + sizeof(bpb), 0, 512 - sizeof(bpb));
+            memcpy((char*)sector, (char*)&bpb, sizeof(bpb));
+            memset(sector + sizeof(bpb), 0, 512 - sizeof(bpb));
     sector[510] = 0x55; sector[511] = 0xAA;
 
     if (ata_write_sector(drive, start_lba, sector) != 0) return -5;
     if (ata_write_sector(drive, start_lba + bpb.BkBootSec, sector) != 0) return -6;
 
-    memory_set(sector, 0, 512);
+    memset(sector, 0, 512);
     sector[0] = 0x52; sector[1] = 0x52; sector[2] = 0x61; sector[3] = 0x41;
     sector[484] = 0x72; sector[485] = 0x72; sector[486] = 0x41; sector[487] = 0x61;
     uint32 free_clusters = cluster_count - 1;
@@ -578,7 +579,7 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     sector[510] = 0x55; sector[511] = 0xAA;
     if (ata_write_sector(drive, start_lba + bpb.FSInfo, sector) != 0) return -7;
 
-    memory_set(sector, 0, 512);
+    memset(sector, 0, 512);
     for (uint32 f = 0; f < bpb.NumFATs; f++) {
         uint32 fat_start = start_lba + bpb.RsvdSecCnt + (f * bpb.FATSz32);
         for (uint32 i = 0; i < bpb.FATSz32; i++) {
@@ -586,7 +587,7 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
         }
     }
     
-    memory_set(sector, 0, 512);
+    memset(sector, 0, 512);
     uint32* fat = (uint32*)sector;
     fat[0] = 0x0FFFFFF8;
     fat[1] = 0x0FFFFFFF;
@@ -598,7 +599,7 @@ int fat32_format_partition(uint8 drive, uint8 partition_num) {
     
     uint32 first_data_sec = bpb.RsvdSecCnt + (bpb.NumFATs * bpb.FATSz32);
     uint32 root_dir_start_sec = start_lba + first_data_sec;
-    memory_set(sector, 0, 512);
+    memset(sector, 0, 512);
     for (uint8 i = 0; i < bpb.SecPerClus; i++) {
         if (ata_write_sector(drive, root_dir_start_sec + i, sector) != 0) return -12;
     }

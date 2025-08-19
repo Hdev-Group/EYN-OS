@@ -1,38 +1,30 @@
+#include <run_command.h>
+#include <eynfs.h>
+#include <util.h>
 #include <types.h>
+#include <isr.h>
 #include <eyn_exe_format.h>
 #include <vga.h>
 #include <fs_commands.h>
 #include <shell_command_info.h>
-#include <util.h>
 #include <string.h>
-#include <eynfs.h>
+
+// Function declarations
+extern uint32_t syscall_dispatch(regs_t* r);
 
 void run_cmd(string arg);
 
+// Process management
+#define MAX_PROCESSES 16
+#define USER_CODE_ADDR 0x2000000  // 32MB
+#define USER_STACK_ADDR 0x3000000 // 48MB
+#define USER_HEAP_ADDR 0x4000000  // 64MB
+#define USER_HEAP_SIZE 0x10000    // 64KB user heap
 #define EYNFS_SUPERBLOCK_LBA 2048
-#define USER_CODE_ADDR 0x200000
-#define USER_STACK_ADDR 0x300000
-#define USER_HEAP_ADDR 0x400000
-#define USER_HEAP_SIZE 0x10000  // 64KB user heap (reduced from 1MB!)
-#define MAX_PROCESSES 2         // Reduced from 4 for memory savings
 
-// Ultra-lightweight process isolation structures
-typedef struct {
-    uint32 pid;
-    uint32 code_start;
-    uint32 code_size;
-    uint32 stack_start;
-    uint32 stack_size;
-    uint32 heap_start;
-    uint32 heap_size;
-    uint32 entry_point;
-    char name[16];              // Reduced from 32
-    int active;
-    int user_mode;
-} process_t;
-
-static process_t processes[MAX_PROCESSES];
-static uint32 next_pid = 1;
+// Global process table
+static process_t g_processes[MAX_PROCESSES];
+static int g_next_pid = 1;
 static int process_isolation_enabled = 1;
 
 // Memory protection for user space (ultra lightweight)
@@ -41,14 +33,14 @@ static uint32 user_heap_used = 0;
 
 // Process management functions (optimized)
 static uint32 allocate_process_id() {
-    return next_pid++;
+    return g_next_pid++;
 }
 
 static process_t* create_process(const char* name, uint32 code_size, uint32 entry_point) {
     // Find free process slot
     int slot = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (!processes[i].active) {
+        if (!g_processes[i].active) {
             slot = i;
             break;
         }
@@ -59,7 +51,7 @@ static process_t* create_process(const char* name, uint32 code_size, uint32 entr
         return NULL;
     }
     
-    process_t* proc = &processes[slot];
+    process_t* proc = &g_processes[slot];
     proc->pid = allocate_process_id();
     proc->code_start = USER_CODE_ADDR;
     proc->code_size = code_size;
@@ -80,7 +72,7 @@ static process_t* create_process(const char* name, uint32 code_size, uint32 entr
 // User memory allocation (separate from kernel heap) - ultra lightweight
 void* user_malloc(uint32 size) {
     if (!process_isolation_enabled) {
-        return my_malloc(size);
+        return malloc(size);
     }
     
     if (user_heap_used + size > USER_HEAP_SIZE) {
@@ -131,8 +123,8 @@ static void switch_to_kernel_mode() {
 // Get current process info
 static process_t* get_current_process() {
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (processes[i].active) {
-            return &processes[i];
+        if (g_processes[i].active) {
+            return &g_processes[i];
         }
     }
     return NULL;
@@ -202,7 +194,7 @@ void run_command(string arg) {
         return;
     }
     uint32_t size = entry.size;
-    char* buf = (char*)my_malloc(size);
+    char* buf = (char*)malloc(size);
     if (!buf) {
         printf("[run] Out of memory.\n");
         return;
@@ -210,83 +202,191 @@ void run_command(string arg) {
     int n = eynfs_read_file(0, &sb, &entry, buf, size, 0);
     if (n < 0) {
         printf("[run] Failed to read file: %s\n", filename);
-        my_free(buf);
+        free(buf);
         return;
     }
     // Parse header
     if (size < sizeof(struct eyn_exe_header)) {
         printf("[run] File too small to be a valid EYN executable.\n");
-        my_free(buf);
+        free(buf);
         return;
     }
     struct eyn_exe_header* hdr = (struct eyn_exe_header*)buf;
     if (hdr->magic[0] != 'E' || hdr->magic[1] != 'Y' || hdr->magic[2] != 'N' || hdr->magic[3] != '\0') {
         printf("[run] Invalid EYN executable magic.\n");
-        my_free(buf);
+        free(buf);
         return;
     }
-    printf("[run] EYN executable detected. Code size: %u, Entry: 0x%X\n", hdr->code_size, hdr->entry_point);
+    printf("[run] EYN executable detected. Code size: %d, Data size: %d, Entry offset: %d\n", 
+           (int)hdr->code_size, (int)hdr->data_size, (int)hdr->entry_point);
     if (size < sizeof(struct eyn_exe_header) + hdr->code_size) {
         printf("[run] File truncated (code section incomplete).\n");
-        my_free(buf);
+        free(buf);
         return;
     }
     // Static check for dangerous opcodes
-    const uint8_t* code = (const uint8_t*)(buf + sizeof(struct eyn_exe_header));
+    uint8_t* code = (uint8_t*)(buf + sizeof(struct eyn_exe_header));
     if (contains_dangerous_opcode(code, hdr->code_size)) {
         printf("[run] Refusing to run: dangerous instructions detected.\n");
-        my_free(buf);
+        free(buf);
         return;
+    }
+    
+    // Lightweight relocation pass: fix absolute references to .data (0x1000 + offset)
+    // Some assembler builds encode data labels as 0x00001000 + offset rather than absolute
+    // runtime addresses. Convert those immediates in MOV r32, imm32 to code_base + 0x1000 + offset.
+    // Pattern: 0xB8..0xBF imm32
+    uint32 code_base = USER_CODE_ADDR;
+    int reloc_count = 0;
+    for (uint32 i = 0; i + 5 <= hdr->code_size; ) {
+        uint8 op = code[i];
+        if (op >= 0xB8 && op <= 0xBF && i + 5 <= hdr->code_size) {
+            uint32 imm = (uint32)code[i+1] | ((uint32)code[i+2] << 8) | ((uint32)code[i+3] << 16) | ((uint32)code[i+4] << 24);
+            // If immediate falls within the 0x1000..0x1000+data_size range, relocate
+            if (imm >= 0x1000 && imm < 0x1000 + hdr->data_size) {
+                uint32 relocated = code_base + imm;
+                code[i+1] = (uint8)(relocated & 0xFF);
+                code[i+2] = (uint8)((relocated >> 8) & 0xFF);
+                code[i+3] = (uint8)((relocated >> 16) & 0xFF);
+                code[i+4] = (uint8)((relocated >> 24) & 0xFF);
+                reloc_count++;
+            }
+            i += 5;
+        } else if (op == 0xCD && i + 2 <= hdr->code_size) {
+            // int imm8
+            i += 2;
+        } else if ((op == 0xE9 || op == 0xE8) && i + 5 <= hdr->code_size) {
+            // jmp/call rel32
+            i += 5;
+        } else if (op == 0x0F && i + 6 <= hdr->code_size) {
+            // 2-byte conditional jump rel32
+            i += 6;
+        } else {
+            // Default advance by 1 to resynchronize
+            i += 1;
+        }
+    }
+    if (reloc_count > 0) {
+        printf("[run] Applied %d relocation(s) for data references.\n", reloc_count);
     }
     
     // Create process for isolation
     process_t* proc = create_process(filename, hdr->code_size, hdr->entry_point);
     if (!proc) {
         printf("[run] Failed to create process\n");
-        my_free(buf);
+        free(buf);
         return;
     }
+    
+    printf("[run] DEBUG: Process created - code_start=%d, code_size=%d\n", (int)proc->code_start, (int)proc->code_size);
+    printf("[run] DEBUG: Process pointer: %p, active: %d\n", proc, proc->active);
+    printf("[run] DEBUG: USER_CODE_ADDR: %d\n", USER_CODE_ADDR);
     
     // Set up execution environment with process isolation
-    printf("[run] Setting up isolated execution environment...\n");
     
     // Copy code to user space
-    printf("[run] Copying code to user space 0x%X...\n", proc->code_start);
     if (!validate_user_memory_access(proc->code_start, hdr->code_size)) {
         printf("[run] Memory validation failed\n");
-        my_free(buf);
+        free(buf);
         return;
     }
-    memory_copy((char*)code, (char*)proc->code_start, hdr->code_size);
+            memcpy((void*)proc->code_start, (char*)code, hdr->code_size);
     
     // Set up data section if present
     if (hdr->data_size > 0) {
         const uint8_t* data = (const uint8_t*)(buf + sizeof(struct eyn_exe_header) + hdr->code_size);
         uint32 data_addr = proc->code_start + 0x1000;
-        printf("[run] Copying data section (%u bytes) to 0x%X...\n", hdr->data_size, data_addr);
+        printf("[run] Data section: %d bytes\n", (int)hdr->data_size);
+        printf("[run] DEBUG: Source data pointer: %p\n", data);
+        printf("[run] DEBUG: Target data address: %d (0x%X)\n", data_addr, data_addr);
+        printf("[run] DEBUG: First few bytes of source data:\n");
+        for (int i = 0; i < hdr->data_size && i < 20; i++) {
+            printf("[run] DEBUG: data[%d] = 0x%02X ('%c')\n", i, (unsigned char)data[i], (data[i] >= 32 && data[i] <= 126) ? data[i] : '?');
+        }
         if (validate_user_memory_access(data_addr, hdr->data_size)) {
-            memory_copy((char*)data, (char*)data_addr, hdr->data_size);
+            memcpy((void*)data_addr, (char*)data, hdr->data_size);
+            printf("[run] DEBUG: Data copy completed\n");
+        } else {
+            printf("[run] DEBUG: Data memory validation failed\n");
         }
     }
     
     // Set up user stack
-    printf("[run] Setting up user stack at 0x%X...\n", proc->stack_start);
+    // Stack is automatically set up by create_process
     
-    // Switch to user mode
-    switch_to_user_mode();
+    // Simple instruction interpreter for user code
+    printf("[run] Executing user code with instruction interpreter...\n");
     
-    // Jump to entry point in user space
-    printf("[run] Jumping to user entry point at 0x%X...\n", proc->code_start + hdr->entry_point);
-    user_entry_t entry_fn = (user_entry_t)(proc->code_start + hdr->entry_point);
+    uint32_t pc = 0;
+    uint32_t regs[8] = {0}; // eax, ecx, edx, ebx, esp, ebp, esi, edi
     
-    // Reset user interrupt flag
-    g_user_interrupt = 0;
+    while (pc < hdr->code_size) {
+        uint8_t opcode = code[pc];
+        
+        if (opcode == 0xB8 || opcode == 0xB9 || opcode == 0xBA || opcode == 0xBB || 
+            opcode == 0xBC || opcode == 0xBD || opcode == 0xBE || opcode == 0xBF) {
+            // mov reg, imm32
+            uint8_t reg = opcode - 0xB8;
+            uint32_t imm = *(uint32_t*)(code + pc + 1);
+            printf("[run] mov reg %d, %d\n", reg, imm);
+            regs[reg] = imm;
+            printf("[run] DEBUG: After mov - regs[%d] = %d\n", reg, regs[reg]);
+            pc += 5;
+        } else if (opcode == 0xCD) {
+            // int imm8
+            uint8_t imm = code[pc + 1];
+            printf("[run] Executing syscall: eax=%d, ebx=%d, ecx=%d, edx=%d\n", 
+                   regs[0], regs[3], regs[1], regs[2]);
+            
+            if (imm == 0x80) {
+                // Handle syscall directly in the instruction interpreter
+                if (regs[0] == 1) { // WRITE
+                    printf("[run] WRITE: ");
+                    printf("[run] DEBUG: Validating - fd=%d, addr=%d, len=%d\n", regs[3], regs[1], regs[2]);
+                    printf("[run] DEBUG: Expected data range: %d to %d\n", (int)proc->code_start + 0x1000, (int)proc->code_start + 0x1000 + 100);
+                    if (regs[3] == 1 && regs[1] >= (uint32_t)(proc->code_start + 0x1000) && regs[1] < (uint32_t)(proc->code_start + 0x1000 + 100) && regs[2] > 0 && regs[2] <= 100) {
+                        // stdout, valid address range (data section), reasonable length
+                        // Read string from user memory and print it directly
+                        printf("[run] DEBUG: Validation passed, reading string from address %d\n", regs[1]);
+                        char* buffer = (char*)regs[1];
+                        printf("[run] DEBUG: Buffer pointer: %p\n", buffer);
+                        printf("[run] DEBUG: Reading %d characters:\n", regs[2]);
+                        for (int i = 0; i < regs[2] && i < 100; i++) {
+                            char c = buffer[i];
+                            printf("[run] DEBUG: buffer[%d] = 0x%02X ('%c')\n", i, (unsigned char)c, (c >= 32 && c <= 126) ? c : '?');
+                            printf("%c", c);
+                        }
+                        printf("\n");
+                        regs[0] = regs[2]; // Return bytes written
+                    } else {
+                        printf("Invalid write parameters - fd=%d, addr=%d, len=%d\n", regs[3], regs[1], regs[2]);
+                        printf("[run] DEBUG: Validation failed - fd==1: %s, addr>=data_start: %s, addr<data_end: %s, len>0: %s, len<=100: %s\n", 
+                               regs[3] == 1 ? "true" : "false",
+                               regs[1] >= (uint32_t)(proc->code_start + 0x1000) ? "true" : "false",
+                               regs[1] < (uint32_t)(proc->code_start + 0x1000 + 100) ? "true" : "false",
+                               regs[2] > 0 ? "true" : "false",
+                               regs[2] <= 100 ? "true" : "false");
+                        regs[0] = -1; // Return error
+                    }
+                } else if (regs[0] == 2) { // EXIT
+                    printf("[run] EXIT: %d\n", regs[3]);
+                    break;
+                }
+            }
+            pc += 2;
+        } else if (opcode == 0xC3) {
+            // ret
+            printf("[run] ret instruction\n");
+            break;
+        } else {
+            // Unknown opcode
+            printf("[run] Unknown opcode: 0x%02X\n", opcode);
+            pc++;
+        }
+    }
     
-    // Execute in user space
-    entry_fn();
-    
-    // Switch back to kernel mode
-    switch_to_kernel_mode();
+    program_exit:
+    printf("[run] Program execution completed\n");
     
     // Check if program was interrupted
     if (g_user_interrupt) {
@@ -300,22 +400,22 @@ void run_command(string arg) {
     proc->active = 0;
     printf("[run] Process %d terminated\n", proc->pid);
     
-    my_free(buf);
+    free(buf);
 }
 
 // Process management functions for shell commands
 int get_process_count() {
     int count = 0;
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (processes[i].active) count++;
+        if (g_processes[i].active) count++;
     }
     return count;
 }
 
 process_t* get_process_by_id(uint32 pid) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (processes[i].active && processes[i].pid == pid) {
-            return &processes[i];
+        if (g_processes[i].active && g_processes[i].pid == pid) {
+            return &g_processes[i];
         }
     }
     return NULL;

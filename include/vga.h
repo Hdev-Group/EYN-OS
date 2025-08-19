@@ -29,9 +29,14 @@ extern int shell_redirect_active;
 extern char shell_redirect_buf[SHELL_REDIRECT_BUF_SIZE];
 extern int shell_redirect_pos;
 
-#define LOG_BUF_SIZE 1024
-extern char shell_log_buf[LOG_BUF_SIZE];
+#define LOG_BUF_SIZE 65536  // Increased to hold ~1000 lines of output
+extern char* shell_log_buf;
+extern int shell_log_buf_size;
 extern int shell_log_pos;
+extern int shell_log_active;
+extern int shell_log_line_count;
+extern int shell_log_line_starts[1001];
+extern int shell_log_current_line_start;
 void shell_log_flush();
 
 int snprintf(char *str, size_t size, const char *format, ...);

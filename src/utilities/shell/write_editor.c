@@ -159,7 +159,7 @@ int save_write_editor_buffer(const char* path, uint8 disk) {
     }
     
     // Allocate buffer for the entire file content
-    char* data = (char*)my_malloc(total_size + 1);
+    char* data = (char*)malloc(total_size + 1);
     if (!data) return -1;
     
     int data_pos = 0;
@@ -186,7 +186,11 @@ int save_write_editor_buffer(const char* path, uint8 disk) {
     if (found != 0) {
         // Try to create the file
             char parent_path[128];
-            strcpy(parent_path, path);
+            if (path) {
+                strcpy(parent_path, path);
+            } else {
+                strcpy(parent_path, "/");
+            }
             char* last_slash = strrchr(parent_path, '/');
             if (!last_slash || last_slash == parent_path) {
                 strcpy(parent_path, "/");
@@ -206,7 +210,7 @@ int save_write_editor_buffer(const char* path, uint8 disk) {
             }
         }
     int written = eynfs_write_file(disk, &sb, &entry, data, data_pos, parent_block, entry_idx);
-    my_free(data); // Clean up allocated memory
+    free(data); // Clean up allocated memory
     if (written != data_pos) {
         return -1;
     }

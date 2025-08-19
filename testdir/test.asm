@@ -1,11 +1,7 @@
-; Simple test program for EYN-OS assembler
-; Just returns immediately to verify basic assembly works
 section .text
 global _start
-
 _start:
-    ; Simple program that just returns
+    mov eax, 2
+    mov ebx, 0
+    int 0x80
     ret
-
-section .data
-    ; Empty data section 

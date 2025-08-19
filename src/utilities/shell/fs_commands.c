@@ -123,7 +123,7 @@ void cd(string input) {
 
 // Helper: recursive ls with depth, indentation, and color
 void eynfs_ls_depth(uint8 disk, uint32_t dir_block, int depth, int max_depth, int indent) {
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(sizeof(eynfs_dir_entry_t) * MAX_ENTRIES);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(sizeof(eynfs_dir_entry_t) * MAX_ENTRIES);
     if (!entries) {
         printf("%cOut of memory for directory listing\n", 255, 0, 0);
         return;
@@ -147,7 +147,7 @@ void eynfs_ls_depth(uint8 disk, uint32_t dir_block, int depth, int max_depth, in
             printf("%c%s\n", 255, 255, 255, entries[i].name);
         }
     }
-    my_free(entries);
+    free(entries);
 }
 
 // Refactor ls to detect filesystem and dispatch
@@ -282,154 +282,6 @@ void read_cmd(string ch) {
         read_raw_cmd(ch);
     }
 }
-
-
-
-// read_md implementation (moved to subcommands.c)
-/*
-void read_md_cmd(string ch) {
-    uint8 disk = g_current_drive;
-    uint8 i = 0;
-    while (ch[i] && ch[i] != ' ') i++;
-    while (ch[i] && ch[i] == ' ') i++;
-    if (!ch[i]) {
-        printf("%cUsage: read_md <filename>\n", 255, 255, 255);
-        printf("%cDisplays markdown files with formatting (bold, italic, headers, etc.)\n", 255, 255, 255);
-        return;
-    }
-    
-    char arg[128]; uint8 j = 0;
-    while (ch[i] && ch[i] != ' ' && j < 127) arg[j++] = ch[i++];
-    arg[j] = '\0';
-    char abspath[128];
-    resolve_path(arg, shell_current_path, abspath, sizeof(abspath));
-    
-    // Try EYNFS first
-    eynfs_superblock_t sb;
-    if (eynfs_read_superblock(disk, EYNFS_SUPERBLOCK_LBA, &sb) == 0 && sb.magic == EYNFS_MAGIC) {
-        eynfs_dir_entry_t entry;
-        if (eynfs_traverse_path(disk, &sb, abspath, &entry, NULL, NULL) != 0 || entry.type != EYNFS_TYPE_FILE) {
-            printf("%cFile not found: %s\n", 255, 0, 0, abspath);
-            return;
-        }
-        
-        // Read the entire file into memory
-        char* file_content = (char*)my_malloc(entry.size + 1);
-        if (!file_content) {
-            printf("%cMemory allocation failed.\n", 255, 0, 0);
-            return;
-        }
-        
-        int bytes_read = eynfs_read_file(disk, &sb, &entry, file_content, entry.size, 0);
-        if (bytes_read < 0) {
-            printf("%cFailed to read file.\n", 255, 0, 0);
-            my_free(file_content);
-            return;
-        }
-        file_content[bytes_read] = '\0';
-        
-        // Render markdown
-        render_markdown(file_content);
-        
-        my_free(file_content);
-        return;
-    }
-    
-    // FAT32 fallback (similar to read_raw_cmd but with markdown rendering)
-    uint32 partition_lba_start = fat32_get_partition_lba_start(disk);
-    struct fat32_bpb bpb;
-    if (fat32_read_bpb_sector(disk, partition_lba_start, &bpb) == 0) {
-        char fatname[12];
-        to_fat32_83(arg, fatname);
-        uint32 byts_per_sec = bpb.BytsPerSec;
-        uint32 sec_per_clus = bpb.SecPerClus;
-        uint32 rsvd_sec_cnt = bpb.RsvdSecCnt;
-        uint32 num_fats = bpb.NumFATs;
-        uint32 fatsz = bpb.FATSz32;
-        uint32 root_clus = bpb.RootClus;
-        uint32 first_data_sec = rsvd_sec_cnt + (num_fats * fatsz);
-        struct fat32_dir_entry entry;
-        int found = 0;
-        uint32 cluster = root_clus;
-        extern volatile int g_user_interrupt;
-        g_user_interrupt = 0;
-        
-        // Find the file
-        while (cluster < 0x0FFFFFF8 && !found) {
-            uint32 cluster_first_sec = first_data_sec + ((cluster - 2) * sec_per_clus);
-            for (uint32 sec = 0; sec < sec_per_clus; sec++) {
-                struct fat32_dir_entry* entries = (struct fat32_dir_entry*)((char*)fat32_disk_img + (cluster_first_sec + sec) * byts_per_sec);
-                int entry_count = byts_per_sec / sizeof(struct fat32_dir_entry);
-                for (int i = 0; i < entry_count; i++) {
-                    if (entries[i].Name[0] == 0x00) break;
-                    if ((entries[i].Attr & 0x0F) == 0x0F) continue;
-                    if (entries[i].Name[0] == 0xE5) continue;
-                    int match = 1;
-                    for (int j = 0; j < 11; j++) {
-                        if (entries[i].Name[j] != fatname[j]) {
-                            match = 0;
-                            break;
-                        }
-                    }
-                    if (match) {
-                        entry = entries[i];
-                        found = 1;
-                        break;
-                    }
-                }
-                if (found) break;
-            }
-            cluster = fat32_next_cluster(fat32_disk_img, &bpb, cluster);
-        }
-        
-        if (!found) {
-            printf("%cFile not found or error reading file.\n", 255, 0, 0);
-            return;
-        }
-        
-        uint32 file_size = entry.FileSize;
-        uint32 first_clus = ((uint32)entry.FstClusHI << 16) | entry.FstClusLO;
-        if (first_clus < 2) {
-            printf("%cInvalid first cluster.\n", 255, 0, 0);
-            return;
-        }
-        
-        // Read file content into memory
-        char* file_content = (char*)my_malloc(file_size + 1);
-        if (!file_content) {
-            printf("%cMemory allocation failed.\n", 255, 0, 0);
-            return;
-        }
-        
-        uint32 cluster2 = first_clus;
-        uint32 bytes_read = 0;
-        g_user_interrupt = 0;
-        
-        while (cluster2 < 0x0FFFFFF8 && bytes_read < file_size) {
-            uint32 data_sec = first_data_sec + ((cluster2 - 2) * sec_per_clus);
-            char* data_ptr = (char*)fat32_disk_img + data_sec * byts_per_sec;
-            for (uint32 s = 0; s < sec_per_clus && bytes_read < file_size; s++) {
-                char* sec_ptr = data_ptr + s * byts_per_sec;
-                uint32 to_copy = byts_per_sec;
-                if (bytes_read + to_copy > file_size) to_copy = file_size - bytes_read;
-                memory_copy(sec_ptr, file_content + bytes_read, to_copy);
-                bytes_read += to_copy;
-            }
-            cluster2 = fat32_next_cluster(fat32_disk_img, &bpb, cluster2);
-        }
-        
-        file_content[bytes_read] = '\0';
-        
-        // Render markdown
-        render_markdown(file_content);
-        
-        my_free(file_content);
-        return;
-    }
-    
-    printf("%cNo supported filesystem found.\n", 255, 0, 0);
-}
-*/
 
 // del implementation
 void del(string ch) {
@@ -864,7 +716,7 @@ int check_filesystem_integrity(uint8_t disk) {
         allocation_size = 16384;
     }
     
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(allocation_size);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(allocation_size);
     if (!entries) {
         printf("Out of memory for filesystem integrity check.\n");
         return -1;
@@ -872,11 +724,11 @@ int check_filesystem_integrity(uint8_t disk) {
     int count = eynfs_read_dir_table(disk, sb.root_dir_block, entries, entry_count);
     if (count < 0) {
         printf("Cannot read root directory - filesystem is corrupted.\n");
-        my_free(entries);
+        free(entries);
         return -1;
     }
     
-    my_free(entries);
+    free(entries);
     printf("Filesystem integrity check passed.\n");
     return 0;
 }
@@ -904,7 +756,11 @@ void makedir(string ch) {
     }
     // Find parent directory and base name
     char parent_path[128];
-    strcpy(parent_path, abspath);
+    if (abspath) {
+        strcpy(parent_path, abspath);
+    } else {
+        strcpy(parent_path, "/");
+    }
     char* last_slash = strrchr(parent_path, '/');
     if (!last_slash || last_slash == parent_path) {
         strcpy(parent_path, "/");
@@ -952,7 +808,7 @@ void deldir(string ch) {
         return;
     }
     // Check if directory is empty
-    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)my_malloc(sizeof(eynfs_dir_entry_t) * MAX_ENTRIES);
+    eynfs_dir_entry_t* entries = (eynfs_dir_entry_t*)malloc(sizeof(eynfs_dir_entry_t) * MAX_ENTRIES);
     if (!entries) {
         printf("%cOut of memory for directory check\n", 255, 0, 0);
         return;
@@ -964,7 +820,7 @@ void deldir(string ch) {
     }
     if (!empty) {
         printf("%cDirectory not empty: %s\n", 255, 0, 0, abspath);
-        my_free(entries);
+        free(entries);
         return;
     }
     if (eynfs_delete_entry(disk, &sb, parent_block, entry.name) == 0) {
@@ -972,7 +828,7 @@ void deldir(string ch) {
     } else {
         printf("%cFailed to delete directory '%s'.\n", 255, 0, 0, abspath);
     }
-    my_free(entries);
+    free(entries);
 }
 
 // fscheck command implementation
@@ -1055,7 +911,7 @@ void copy_cmd(string ch) {
     }
     
     // Read file content
-    uint8_t* file_content = (uint8_t*)my_malloc(source_entry.size + 1);
+    uint8_t* file_content = (uint8_t*)malloc(source_entry.size + 1);
     if (!file_content) {
         printf("%cError: Memory allocation failed.\n", 255, 0, 0);
         return;
@@ -1064,7 +920,7 @@ void copy_cmd(string ch) {
     int bytes_read = eynfs_read_file(disk, &sb, &source_entry, file_content, source_entry.size, 0);
     if (bytes_read <= 0) {
         printf("%cError: Failed to read source file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
@@ -1084,20 +940,20 @@ void copy_cmd(string ch) {
     uint32_t dest_parent_block;
     if (eynfs_traverse_path(disk, &sb, dest_dir, &dest_parent, &dest_parent_block, NULL) != 0) {
         printf("%cError: Destination directory not found: %s\n", 255, 0, 0, dest_dir);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     if (dest_parent.type != EYNFS_TYPE_DIR) {
         printf("%cError: Destination is not a directory: %s\n", 255, 0, 0, dest_dir);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     // Create the destination file
     if (eynfs_create_entry(disk, &sb, dest_parent.first_block, dest_name, EYNFS_TYPE_FILE) != 0) {
         printf("%cError: Failed to create destination file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
@@ -1106,19 +962,19 @@ void copy_cmd(string ch) {
     uint32_t dest_entry_idx;
     if (eynfs_find_in_dir(disk, &sb, dest_parent.first_block, dest_name, &dest_entry, &dest_entry_idx) != 0) {
         printf("%cError: Failed to locate created file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     // Use the improved eynfs_write_file function
     if (eynfs_write_file(disk, &sb, &dest_entry, file_content, bytes_read, dest_parent.first_block, dest_entry_idx) != bytes_read) {
         printf("%cError: Failed to write destination file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     printf("%cFile copied: %s -> %s (%d bytes)\n", 0, 255, 0, source_path, dest_path, bytes_read);
-    my_free(file_content);
+    free(file_content);
 }
 
 // Move command implementation - rewritten from scratch
@@ -1188,7 +1044,7 @@ void move_cmd(string ch) {
     }
     
     // Read file content
-    uint8_t* file_content = (uint8_t*)my_malloc(source_entry.size + 1);
+    uint8_t* file_content = (uint8_t*)malloc(source_entry.size + 1);
     if (!file_content) {
         printf("%cError: Memory allocation failed.\n", 255, 0, 0);
         return;
@@ -1197,7 +1053,7 @@ void move_cmd(string ch) {
     int bytes_read = eynfs_read_file(disk, &sb, &source_entry, file_content, source_entry.size, 0);
     if (bytes_read <= 0) {
         printf("%cError: Failed to read source file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
@@ -1217,20 +1073,20 @@ void move_cmd(string ch) {
     uint32_t dest_parent_block;
     if (eynfs_traverse_path(disk, &sb, dest_dir, &dest_parent, &dest_parent_block, NULL) != 0) {
         printf("%cError: Destination directory not found: %s\n", 255, 0, 0, dest_dir);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     if (dest_parent.type != EYNFS_TYPE_DIR) {
         printf("%cError: Destination is not a directory: %s\n", 255, 0, 0, dest_dir);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     // Create the destination file
     if (eynfs_create_entry(disk, &sb, dest_parent.first_block, dest_name, EYNFS_TYPE_FILE) != 0) {
         printf("%cError: Failed to create destination file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
@@ -1239,14 +1095,14 @@ void move_cmd(string ch) {
     uint32_t dest_entry_idx;
     if (eynfs_find_in_dir(disk, &sb, dest_parent.first_block, dest_name, &dest_entry, &dest_entry_idx) != 0) {
         printf("%cError: Failed to locate created file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
     // Use the improved eynfs_write_file function
     if (eynfs_write_file(disk, &sb, &dest_entry, file_content, bytes_read, dest_parent.first_block, dest_entry_idx) != bytes_read) {
         printf("%cError: Failed to write destination file.\n", 255, 0, 0);
-        my_free(file_content);
+        free(file_content);
         return;
     }
     
@@ -1257,7 +1113,7 @@ void move_cmd(string ch) {
         printf("%cFile moved: %s -> %s (%d bytes)\n", 0, 255, 0, source_path, dest_path, bytes_read);
     }
     
-    my_free(file_content);
+    free(file_content);
 }
 
 REGISTER_SHELL_COMMAND(ls, "ls", ls_cmd, CMD_STREAMING, "List files in the root directory of the selected drive.\nUsage: ls", "ls");

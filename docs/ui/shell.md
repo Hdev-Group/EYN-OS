@@ -505,19 +505,19 @@ printf("Error: Unknown command '%s'\n", cmd);
 
 ### Example New Command
 ```c
-void my_cmd(string args) {
+void custom_cmd(string args) {
     if (!args) {
-        printf("Usage: my_cmd <argument>\n");
+        printf("Usage: custom_cmd <argument>\n");
         return;
     }
-    printf("My command executed with: %s\n", args);
+    printf("Custom command executed with: %s\n", args);
 }
 
 // In shell initialization
-REGISTER_SHELL_COMMAND("my_cmd", "My custom command", my_cmd);
+REGISTER_SHELL_COMMAND("custom_cmd", "My custom command", custom_cmd);
 
 // Add to streaming commands array
-{"my_cmd", my_cmd, CMD_STREAMING, "My custom command", "my_cmd arg"},
+{"custom_cmd", custom_cmd, CMD_STREAMING, "My custom command", "custom_cmd arg"},
 ```
 
 ---

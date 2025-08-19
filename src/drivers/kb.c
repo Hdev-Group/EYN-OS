@@ -8,7 +8,7 @@
 extern multiboot_info_t *g_mbi;
 
 string readStr() {
-    string buffstr = (string) my_malloc(200);
+    string buffstr = (string) malloc(200);
     uint8 i = 0;
     uint8 reading = 1;
     uint8 shift_pressed = 0;  // Track shift key state
@@ -57,7 +57,7 @@ string readStr() {
                 buffstr[0] = '\0';  // Clear the buffer
                 reading = 0;        // Exit the reading loop
                 printf("%c^C\n", 255, 255, 255);  // Print ^C in white
-                my_free(buffstr);   // Clean up memory
+                free(buffstr);   // Clean up memory
                 return buffstr;
             }
             

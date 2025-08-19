@@ -28,7 +28,7 @@ int kmain(uint32 magic, multiboot_info_t *mbi)
 	isr_install();
 	clearScreen();
 	
-	printf("EYN-OS Release 12\n");
+	printf("EYN-OS Release 13\n");
 	printf("Type 'help' for a list of commands.\n\n");
 	
 	// Initialize ATA drives immediately

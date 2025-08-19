@@ -12,7 +12,7 @@ int rei_read_header(const uint8_t* data, size_t size, rei_header_t* header) {
     }
     
     // Copy header data
-    memory_copy((char*)data, (char*)header, sizeof(rei_header_t));
+            memcpy(header, (char*)data, sizeof(rei_header_t));
     
     return 0;
 }
@@ -76,13 +76,13 @@ int rei_parse_image(const uint8_t* data, size_t size, rei_image_t* image) {
     }
     
     // Allocate memory for pixel data
-    image->data = (uint8_t*)my_malloc(expected_size);
+    image->data = (uint8_t*)malloc(expected_size);
     if (!image->data) {
         return -1;
     }
     
     // Copy pixel data
-    memory_copy((char*)(data + sizeof(rei_header_t)), (char*)image->data, expected_size);
+            memcpy(image->data, (char*)(data + sizeof(rei_header_t)), expected_size);
     image->data_size = expected_size;
     
     return 0;
@@ -91,7 +91,7 @@ int rei_parse_image(const uint8_t* data, size_t size, rei_image_t* image) {
 // Free REI image memory
 void rei_free_image(rei_image_t* image) {
     if (image && image->data) {
-        my_free(image->data);
+        free(image->data);
         image->data = NULL;
         image->data_size = 0;
     }

@@ -225,7 +225,7 @@ msync 0x12345678
 ## Integration with Existing Systems
 
 ### Compatibility
-- **Existing Memory Management**: Works alongside `my_malloc`/`my_free`
+- **Existing Memory Management**: Works alongside `malloc`/`free`
 - **File System Integration**: Compatible with EYNFS and FAT32
 - **Command System**: Integrates with existing shell command system
 - **Error Handling**: Consistent with existing error reporting

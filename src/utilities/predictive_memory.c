@@ -13,6 +13,10 @@ static uint8_t g_mapping_count = 0;
 static uint32_t g_total_access_count = 0;
 static uint32_t g_prediction_timer = 0;
 
+// Size-based hash table for O(1) block lookups
+static uint8_t g_size_hash_table[64]; // Maps common sizes to block indices
+static int g_hash_table_initialized = 0;
+
 // Initialize predictive memory management system
 void predictive_memory_init(void) {
     // Initialize predictive allocator
@@ -24,6 +28,12 @@ void predictive_memory_init(void) {
     g_total_access_count = 0;
     g_prediction_timer = 0;
     
+    // Initialize size hash table
+    for (int i = 0; i < 64; i++) {
+        g_size_hash_table[i] = 0xFF; // Invalid index
+    }
+    g_hash_table_initialized = 1;
+    
     // Do NOT pre-allocate blocks at boot to avoid false-positive leak stats.
     // Blocks will be allocated lazily on first use and freed when returned.
     for (int i = 0; i < 16; i++) {
@@ -33,9 +43,52 @@ void predictive_memory_init(void) {
     }
 }
 
-// Predictive memory allocation with pattern analysis
+// Helper function to get size hash index
+static uint8_t get_size_hash_index(uint32_t size) {
+    // Simple hash function for common allocation sizes
+    if (size <= 16) return 0;
+    if (size <= 32) return 1;
+    if (size <= 64) return 2;
+    if (size <= 128) return 3;
+    if (size <= 256) return 4;
+    if (size <= 512) return 5;
+    if (size <= 1024) return 6;
+    if (size <= 2048) return 7;
+    if (size <= 4096) return 8;
+    return (size >> 8) % 55 + 9; // For larger sizes, use upper bits
+}
+
+// Helper function to update size hash table
+static void update_size_hash_table(uint32_t size, uint8_t block_index) {
+    if (!g_hash_table_initialized) return;
+    
+    uint8_t hash_index = get_size_hash_index(size);
+    if (hash_index < 64) {
+        g_size_hash_table[hash_index] = block_index;
+    }
+}
+
+// Predictive memory allocation with pattern analysis and O(1) lookup optimization
 void* predictive_malloc(size_t size, memory_prediction_t* pattern) {
-    // Try to find an existing cached block that fits and is free
+    // First, try O(1) lookup using size hash table
+    if (g_hash_table_initialized) {
+        uint8_t hash_index = get_size_hash_index(size);
+        if (hash_index < 64 && g_size_hash_table[hash_index] != 0xFF) {
+            uint8_t block_idx = g_size_hash_table[hash_index];
+            if (block_idx < 16 && 
+                g_predictive_allocator.predicted_blocks[block_idx] &&
+                !g_predictive_allocator.block_used[block_idx] &&
+                g_predictive_allocator.block_sizes[block_idx] >= size) {
+                
+                g_predictive_allocator.block_used[block_idx] = 1;
+                g_predictive_allocator.prediction_hits++;
+                update_access_pattern((uint32_t)g_predictive_allocator.predicted_blocks[block_idx], (uint32_t)size);
+                return g_predictive_allocator.predicted_blocks[block_idx];
+            }
+        }
+    }
+    
+    // Fallback to linear search if hash lookup fails
     for (int i = 0; i < 16; i++) {
         if (g_predictive_allocator.predicted_blocks[i] &&
             !g_predictive_allocator.block_used[i] &&
@@ -48,7 +101,7 @@ void* predictive_malloc(size_t size, memory_prediction_t* pattern) {
     }
     
     // No cached block available; allocate a new one
-    void* ptr = my_malloc((int)size);
+    void* ptr = malloc((int)size);
     if (ptr) {
         // Remember this allocation for potential reuse later
         for (int i = 0; i < 16; i++) {
@@ -56,6 +109,9 @@ void* predictive_malloc(size_t size, memory_prediction_t* pattern) {
                 g_predictive_allocator.predicted_blocks[i] = ptr;
                 g_predictive_allocator.block_sizes[i] = (uint32_t)size;
                 g_predictive_allocator.block_used[i] = 1;
+                
+                // Update hash table for O(1) future lookups
+                update_size_hash_table(size, i);
                 break;
             }
         }
@@ -74,8 +130,18 @@ void predictive_free(void* ptr) {
     for (int i = 0; i < 16; i++) {
         if (g_predictive_allocator.predicted_blocks[i] == ptr) {
             g_predictive_allocator.block_used[i] = 0;
+            
+            // Clear hash table entry for this block
+            if (g_hash_table_initialized) {
+                uint32_t size = g_predictive_allocator.block_sizes[i];
+                uint8_t hash_index = get_size_hash_index(size);
+                if (hash_index < 64 && g_size_hash_table[hash_index] == i) {
+                    g_size_hash_table[hash_index] = 0xFF; // Mark as invalid
+                }
+            }
+            
             // Free immediately to keep allocation/free counts balanced and avoid leak warnings
-            my_free(ptr);
+            free(ptr);
             g_predictive_allocator.predicted_blocks[i] = NULL;
             g_predictive_allocator.block_sizes[i] = 0;
             return;
@@ -83,7 +149,7 @@ void predictive_free(void* ptr) {
     }
     
     // Fallback: regular free
-    my_free(ptr);
+    free(ptr);
 }
 
 // Update memory access patterns
@@ -186,7 +252,7 @@ void adaptive_memory_optimization(void) {
     if (g_predictive_allocator.hit_rate < 0.3f) {
         for (int i = 0; i < 16; i++) {
             if (g_predictive_allocator.predicted_blocks[i] && !g_predictive_allocator.block_used[i]) {
-                my_free(g_predictive_allocator.predicted_blocks[i]);
+                free(g_predictive_allocator.predicted_blocks[i]);
                 g_predictive_allocator.predicted_blocks[i] = NULL;
                 g_predictive_allocator.block_sizes[i] = 0;
             }
@@ -232,7 +298,7 @@ int eynfs_mmap(const char* path, void** addr, size_t* size, uint8_t read_only) {
     }
     
     // Allocate memory for the entire file
-    void* mapped_addr = my_malloc((int)entry.size);
+    void* mapped_addr = malloc((int)entry.size);
     if (!mapped_addr) {
         printf("%cError: Out of memory for mapping\n", 255, 0, 0);
         return -1;
@@ -242,7 +308,7 @@ int eynfs_mmap(const char* path, void** addr, size_t* size, uint8_t read_only) {
     int bytes_read = eynfs_read_file(drive, &sb, &entry, mapped_addr, entry.size, 0);
     if (bytes_read != (int)entry.size) {
         printf("%cError: Failed to read file for mapping\n", 255, 0, 0);
-        my_free(mapped_addr);
+        free(mapped_addr);
         return -1;
     }
     
@@ -267,7 +333,7 @@ int eynfs_mmap(const char* path, void** addr, size_t* size, uint8_t read_only) {
 int eynfs_munmap(void* addr, size_t size) {
     for (int i = 0; i < g_mapping_count; i++) {
         if (g_file_mappings[i].mapped_address == addr) {
-            my_free(addr);
+            free(addr);
             
             // Remove from mapping array
             for (int j = i; j < g_mapping_count - 1; j++) {

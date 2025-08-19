@@ -177,7 +177,7 @@ run: build
 	qemu-system-i386 -cdrom EYNOS.iso \
 	-hda eynfs.img \
 	-boot d \
-	-m 16M
+	-m 12M
 
 # Just runs the OS, no rebuilding.
 

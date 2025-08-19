@@ -992,7 +992,7 @@ void read_raw_cmd(string ch) {
                     buffer_size = 65537; // 64KB + 1 for null terminator
                 }
                 
-                char* buffer = (char*)my_malloc(buffer_size);
+                char* buffer = (char*)malloc(buffer_size);
                 if (buffer) {
                     // Read the file (up to buffer size)
                     int bytes_to_read = (entry.size < buffer_size - 1) ? entry.size : buffer_size - 1;
@@ -1011,7 +1011,7 @@ void read_raw_cmd(string ch) {
                         printf("%cError: Failed to read file.\n", 255, 0, 0);
                     }
                     
-                    my_free(buffer);
+                    free(buffer);
                 } else {
                     printf("%cError: Memory allocation failed for buffer (%d bytes).\n", 255, 0, 0, buffer_size);
                 }
@@ -1078,7 +1078,7 @@ void read_md_cmd(string ch) {
                     buffer_size = 65537; // 64KB + 1 for null terminator
                 }
                 
-                char* buffer = (char*)my_malloc(buffer_size);
+                char* buffer = (char*)malloc(buffer_size);
                 if (buffer) {
                     // Read the file (up to buffer size)
                     int bytes_to_read = (entry.size < buffer_size - 1) ? entry.size : buffer_size - 1;
@@ -1100,7 +1100,7 @@ void read_md_cmd(string ch) {
                         printf("%cError: Failed to read markdown file.\n", 255, 0, 0);
                     }
                     
-                    my_free(buffer);
+                    free(buffer);
                 } else {
                     printf("%cError: Memory allocation failed for buffer (%d bytes).\n", 255, 0, 0, buffer_size);
                 }
@@ -1167,7 +1167,7 @@ void read_image_cmd(string ch) {
                     buffer_size = 65536; // 64KB limit for images
                 }
                 
-                uint8_t* buffer = (uint8_t*)my_malloc(buffer_size);
+                uint8_t* buffer = (uint8_t*)malloc(buffer_size);
                 if (buffer) {
                     // Read the file (up to buffer size)
                     int bytes_to_read = (entry.size < buffer_size) ? entry.size : buffer_size;
@@ -1192,7 +1192,7 @@ void read_image_cmd(string ch) {
                         printf("%cError: Failed to read image file.\n", 255, 0, 0);
                     }
                     
-                    my_free(buffer);
+                    free(buffer);
                 } else {
                     printf("%cError: Memory allocation failed for buffer (%d bytes).\n", 255, 0, 0, buffer_size);
                 }

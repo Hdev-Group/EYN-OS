@@ -396,17 +396,25 @@ General utility functions.
 
 #### Memory Management
 ```c
-void* my_malloc(size_t size);
-void my_free(void* ptr);
-void* my_realloc(void* ptr, size_t size);
+void* malloc(size_t size);
+void free(void* ptr);
+void* realloc(void* ptr, size_t size);
+void* calloc(size_t count, size_t size);
 ```
 
 #### Utility Functions
 ```c
 int str_to_int(const char* str);
-char* int_to_str(int value, char* buffer);
-void sleep(uint32_t milliseconds);
-uint32_t get_current_time();
+char* int_to_string(int value);
+void sleep(uint8_t times);
+uint32_t detect_available_memory(void);
+void print_memory_stats(void);
+uint32_t get_heap_size(void);
+int get_memory_error_count(void);
+int get_stack_overflow_status(void);
+uint32_t get_current_stack_pointer(void);
+void check_stack_overflow(void);
+void putchar(char c);
 ```
 
 ## Game Engine Headers
@@ -529,7 +537,7 @@ Most functions return:
 - Positive values for specific error codes
 
 ### Memory Management
-- Use `my_malloc()` and `my_free()` for dynamic allocation
+- Use `malloc()` and `free()` for dynamic allocation
 - Always check return values for NULL
 - Free memory when no longer needed
 

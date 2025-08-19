@@ -1,6 +1,8 @@
 #ifndef RUN_COMMAND_H
 #define RUN_COMMAND_H
 
+#include "types.h"
+
 void run_command(string ch);
 
 // Process management functions

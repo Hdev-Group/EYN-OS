@@ -4,6 +4,9 @@
 #include <util.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <string.h>
+#include <types.h>
+#include <shell.h>
 
 extern multiboot_info_t *g_mbi;
 
@@ -15,21 +18,81 @@ int shell_redirect_active = 0;
 char shell_redirect_buf[SHELL_REDIRECT_BUF_SIZE];
 int shell_redirect_pos = 0;
 
-#define LOG_BUF_SIZE 1024
-char shell_log_buf[LOG_BUF_SIZE];
+// Dynamic buffer sizing based on available memory
+char* shell_log_buf = NULL;
+int shell_log_buf_size = 0;
 int shell_log_pos = 0;
+int shell_log_line_count = 0;  // Track number of lines
+int shell_log_line_starts[1001];  // Track start positions of last 1000 lines
+int shell_log_current_line_start = 0;  // Start of current line
 int shell_log_active = 0;
+
+// Initialize dynamic log buffer based on available memory
+void init_dynamic_log_buffer() {
+    if (shell_log_buf != NULL) return; // Already initialized
+    
+    // Detect available memory and set appropriate buffer size
+    extern multiboot_info_t *g_mbi;
+    uint32_t available_memory = 32 * 1024 * 1024; // Default assumption
+    
+    if (g_mbi && (g_mbi->flags & MULTIBOOT_INFO_MEM_MAP)) {
+        // Calculate total available memory from memory map
+        uint32_t total_ram = 0;
+        multiboot_memory_map_t* mmap = (multiboot_memory_map_t*)g_mbi->mmap_addr;
+        uint32_t entries = g_mbi->mmap_length / sizeof(multiboot_memory_map_t);
+        
+        for (uint32_t i = 0; i < entries && i < 50; i++) {
+            if (mmap[i].type == MULTIBOOT_MEMORY_AVAILABLE) {
+                total_ram += mmap[i].len;
+            }
+        }
+        
+        if (total_ram > 0) {
+            available_memory = total_ram;
+        }
+    }
+    
+    // Set buffer size based on available memory
+    if (available_memory < 8 * 1024 * 1024) {        // Less than 8MB
+        shell_log_buf_size = 4096;                   // 4KB buffer
+    } else if (available_memory < 32 * 1024 * 1024) { // Less than 32MB
+        shell_log_buf_size = 16384;                  // 16KB buffer
+    } else if (available_memory < 128 * 1024 * 1024) { // Less than 128MB
+        shell_log_buf_size = 32768;                  // 32KB buffer
+    } else {                                          // 128MB+
+        shell_log_buf_size = 65536;                  // 64KB buffer
+    }
+    
+    // Allocate the buffer
+    shell_log_buf = (char*)malloc(shell_log_buf_size);
+    if (!shell_log_buf) {
+        // Fallback to static buffer if allocation fails
+        shell_log_buf_size = 4096;
+        shell_log_buf = (char*)malloc(shell_log_buf_size);
+        if (!shell_log_buf) {
+            printf("%cWarning: Failed to allocate log buffer\n", 255, 165, 0);
+            shell_log_buf_size = 0;
+        }
+    }
+    
+    shell_log_pos = 0;
+    shell_log_line_count = 0;
+    shell_log_current_line_start = 0;
+}
 
 void shell_log_enable() { shell_log_active = 1; }
 void shell_log_disable() { shell_log_active = 0; }
 
 void shell_log_flush() {
-    if (shell_log_pos == 0) return;
+    // Initialize dynamic buffer if not already done
+    init_dynamic_log_buffer();
+    
+    if (shell_log_pos == 0 || !shell_log_buf) return;
     
     // Memory safety: limit log file size to prevent excessive allocation
-    if (shell_log_pos > 4096) { // 4KB limit for log files
-        printf("%cWarning: Log buffer too large (%d bytes), truncating to 4KB\n", 255, 165, 0, shell_log_pos);
-        shell_log_pos = 4096;
+    if (shell_log_pos > shell_log_buf_size) {
+        printf("%cWarning: Log buffer too large (%d bytes), truncating to %d bytes\n", 255, 165, 0, shell_log_pos, shell_log_buf_size);
+        shell_log_pos = shell_log_buf_size;
     }
     
     eynfs_superblock_t sb;
@@ -55,14 +118,15 @@ void shell_log_flush() {
     
     // Memory safety: limit total allocation size
     size_t total_size = old_size + shell_log_pos;
-    if (total_size > 8192) { // 8KB limit for log operations
-        printf("%cWarning: Log operation too large (%d bytes), limiting to 8KB\n", 255, 165, 0, total_size);
-        if (old_size > 4096) old_size = 4096;
-        if (shell_log_pos > 4096) shell_log_pos = 4096;
+    size_t max_log_size = (shell_log_buf_size > 8192) ? 8192 : shell_log_buf_size;
+    if (total_size > max_log_size) { // Dynamic limit based on buffer size
+        printf("%cWarning: Log operation too large (%d bytes), limiting to %d bytes\n", 255, 165, 0, total_size, max_log_size);
+        if (old_size > max_log_size / 2) old_size = max_log_size / 2;
+        if (shell_log_pos > (int)shell_log_buf_size) shell_log_pos = shell_log_buf_size;
         total_size = old_size + shell_log_pos;
     }
     
-    char* newbuf = (char*)my_malloc(total_size);
+    char* newbuf = (char*)malloc(total_size);
     if (!newbuf) {
         printf("%cWarning: Out of memory for log operation\n", 255, 165, 0);
         return;
@@ -74,15 +138,15 @@ void shell_log_flush() {
     
     // Bounds check for memory copy
     if (n + shell_log_pos <= total_size) {
-        memory_copy(shell_log_buf, newbuf + n, shell_log_pos);
+        memcpy(newbuf + n, shell_log_buf, shell_log_pos);
     } else {
         printf("%cWarning: Log buffer overflow prevented\n", 255, 165, 0);
-        my_free(newbuf);
+        free(newbuf);
         return;
     }
     
     int written = eynfs_write_file(0, &sb, &entry, newbuf, n + shell_log_pos, sb.root_dir_block, entry_idx);
-    my_free(newbuf);
+    free(newbuf);
     
     if (written < 0) {
         printf("%cWarning: Failed to write log file\n", 255, 165, 0);
@@ -319,7 +383,36 @@ void printf(const char* format, ...)
 		// Append to the log buffer
 		for (int i = 0; i < temp_pos; ++i) {
 			if (shell_log_pos < LOG_BUF_SIZE - 1) {
+				// Check if we need to start a new line
+				if (shell_log_pos == 0 || shell_log_buf[shell_log_pos - 1] == '\n') {
+					shell_log_current_line_start = shell_log_pos;
+				}
+				
 				shell_log_buf[shell_log_pos++] = temp[i];
+				
+				// If we just added a newline, record the line start
+				if (temp[i] == '\n') {
+					shell_log_line_starts[shell_log_line_count] = shell_log_current_line_start;
+					shell_log_line_count++;
+					
+					// Keep only last 1000 lines
+					if (shell_log_line_count > 1000) {
+						// Move buffer content to start, keeping only last 1000 lines
+						int first_line_start = shell_log_line_starts[1];
+						int bytes_to_keep = shell_log_pos - first_line_start;
+						
+						if (bytes_to_keep > 0 && first_line_start < shell_log_pos) {
+							                                                        memmove(shell_log_buf, shell_log_buf + first_line_start, bytes_to_keep);
+							shell_log_pos = bytes_to_keep;
+							
+							// Adjust line start positions
+							for (int j = 0; j < 1000; j++) {
+								shell_log_line_starts[j] = shell_log_line_starts[j + 1] - first_line_start;
+							}
+							shell_log_line_count = 1000;
+						}
+					}
+				}
 			}
 			if (temp[i] == '\n') {
 				shell_log_buf[shell_log_pos] = '\0';

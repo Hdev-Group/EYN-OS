@@ -245,10 +245,10 @@ void search_cmd(string args) {
 All math utilities use EYN-OS's memory management functions:
 ```c
 // Allocate memory for temporary arrays
-char** temp_array = my_malloc(sizeof(char*) * array_size);
+char** temp_array = malloc(sizeof(char*) * array_size);
 
 // Free memory when done
-my_free(temp_array);
+free(temp_array);
 ```
 
 #### Memory Efficiency
